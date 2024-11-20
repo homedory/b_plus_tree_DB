@@ -162,30 +162,30 @@ void start_new_file(record rec) {
 // Find Utitlity Function
 
 off_t find_leaf(int key) {
-    off_t next_page_offset;
+    off_t next_offset;
     int i = 0;
 
     // Empty Tree, return header page offset
-    if (rt == NULL) {
+    if (hp->num_of_pages == 1) {
         return 0;
     }
     page * c = (page*)calloc(1, sizeof(page)); 
     memcpy(c, rt, sizeof(page)); // start from root page
     
-    next_page_offset = hp->rpo;
+    next_offset = hp->rpo;
     while (!c->is_leaf) {
         i = 0;
         while (i < c->num_of_keys) {
             if (key >= c->b_f[i].key) i++;
             else break;
         }
-        next_page_offset = c->b_f[i].p_offset;
+        next_offset = c->b_f[i].p_offset;
         free(c);
-        c = load_page(next_page_offset);
+        c = load_page(next_offset);
     }
 
     free(c);
-    return next_page_offset;
+    return next_offset;
 }
 
 
@@ -247,6 +247,11 @@ void insert_into_leaf(page * leaf, off_t leaf_offset, record new_record) {
     // free(leaf);
 }
 
+/* Inserts a new record
+ * into a leaf so as to exceed
+ * the tree's order, causing the leaf to be split
+ * in half.
+ */
 void insert_into_leaf_after_splitting(page * leaf, off_t leaf_offset, record new_record) {
     page * new_leaf;
     record * temp_records;
@@ -268,7 +273,7 @@ void insert_into_leaf_after_splitting(page * leaf, off_t leaf_offset, record new
         temp_records[j] = leaf->records[i];
     }
 
-    temp_records[i] = new_record;
+    temp_records[insertion_index] = new_record;
 
     leaf->num_of_keys = 0;
     new_leaf->num_of_keys = 0;
@@ -296,15 +301,98 @@ void insert_into_leaf_after_splitting(page * leaf, off_t leaf_offset, record new
     new_key = new_leaf->records[0].key;
 
     insert_into_parent(leaf, leaf_offset, new_key, new_leaf, new_leaf_offset);
-
-    // disk write page and free memory will be conducted in other functions
-
     pwrite(fd, new_leaf, sizeof(page), new_leaf_offset);
     free(new_leaf);
-    // pwrite(fd, leaf, sizeof(page), leaf_page_offset);
+}
 
-    // free(leaf);
+/* Inserts a new record
+ * into a leaf so as to exceed
+ * the tree's order, causing key rotation.
+ */
+void insert_into_leaf_using_key_rotation(page * leaf, off_t leaf_offset, record new_record) {
+    page * next_leaf;
+    off_t next_leaf_offset;
+    record * temp_records;
+    record rightmost_record;
+    int64_t new_key;
+    int insertion_index, i, j;
     
+    temp_records = (record*)calloc(leaf_order, sizeof(record));
+
+    insertion_index = 0;
+    while(insertion_index < leaf_order - 1 && leaf->records[insertion_index].key < new_record.key)
+        insertion_index++;
+
+    for (i = 0, j = 0; i < leaf->num_of_keys; i++, j++) {
+        if (j == insertion_index) j++;
+        temp_records[j] = leaf->records[i];
+    }
+    temp_records[insertion_index] = new_record;
+
+    // rearrange records in leaf node
+    for (i = 0; i < leaf->num_of_keys; i++) {
+        leaf->records[i] = temp_records[i];
+    }
+    rightmost_record = temp_records[leaf_order - 1];
+    free(temp_records);
+
+    next_leaf_offset = leaf->next_offset;
+    next_leaf = load_page(next_leaf_offset);
+
+    new_key = rightmost_record.key;
+    update_key_for_key_rotation(next_leaf, next_leaf_offset, new_key);
+
+    // insert rightmost record into next leaf node
+    insert_into_leaf(next_leaf, next_leaf_offset, rightmost_record);
+    pwrite(fd, next_leaf, sizeof(page), next_leaf_offset);
+    free(next_leaf);
+}
+
+/* Check if there is a room
+ * in a leaf node
+ * for key rotation insertion
+ */
+bool has_room_for_record(off_t leaf_offset) {
+    page * leaf;
+    bool result;
+
+    if (leaf_offset == 0)
+        return false;
+
+    leaf = load_page(leaf_offset);
+    result = (leaf->num_of_keys < leaf_order - 1);
+    free(leaf);
+    return result;
+}
+
+/* Update a new key 
+ * in key rotation insertion
+ */
+void update_key_for_key_rotation(page * leaf, off_t leaf_offset, int64_t key) {
+    page * upper;
+    off_t upper_offset, lower_offset;
+    int i;
+
+    upper_offset = leaf->parent_page_offset;
+    upper = load_page(upper_offset);
+    lower_offset = leaf_offset;
+    
+    // loop until the upper becomes non-leftmost node
+    while (upper->next_offset == lower_offset) {
+        lower_offset = upper_offset;
+        upper_offset = upper->parent_page_offset;
+        free(upper);
+        upper = load_page(upper_offset);
+    }
+
+    // find index of branching factor in upper node
+    for (i = 0; i < upper->num_of_keys; i++) 
+        if (upper->b_f[i].p_offset == lower_offset) break;
+    
+    // change key
+    upper->b_f[i].key = key;
+    pwrite(fd, upper, sizeof(page), upper_offset);
+    free(upper);
 }
 
 /* Inserts a new key and page number to a node
@@ -498,22 +586,84 @@ void insert_into_new_root(page * left, off_t left_offset, int64_t key, page * ri
 
 
 char * db_find(int64_t key) {
-    int i = 0;
-    page * c = find_leaf(key);
-    if (c == NULL) return NULL;
-    for (i = 0; i < c->num_of_keys; i++)
-        if (c->records[i].key == key) break;
-    if (i == c->num_of_keys)
-        return NULL;
-    else 
-        return &(c->records[i].value[0]);
+    int i;
+    page * leaf;
+    off_t leaf_offset;
+    char * value;
     
-    // leaf page free 필요??
+    leaf_offset = find_leaf(key);
+
+    // Empty Tree
+    if (leaf_offset == 0) 
+        return NULL;
+
+    leaf = load_page(leaf_offset);
+
+    if (leaf == NULL) return NULL;
+    for (i = 0; i < leaf->num_of_keys; i++)
+        if (leaf->records[i].key == key) break;
+    if (i == leaf->num_of_keys) {
+        free(leaf);
+        return NULL;
+    }
+
+    value = calloc(120, sizeof(char));
+    memcpy(value, leaf->records[i].value, 120 * sizeof(char));
+    free(leaf);
+    return value;
 }
 
 int db_insert(int64_t key, char * value) {
-    
+    record new_rec;
+    page * leaf;
+    off_t leaf_offset;
 
+    /* The current implementation ignores
+     * duplicates.
+     */
+    if (db_find(key) != NULL)
+        return -1;
+
+    new_rec.key = key;
+    memcpy(new_rec.value, value, 120 * sizeof(char));
+
+    /* Case: the tree does not exist yet.
+     * Start a new tree.
+     */
+
+    if (hp->num_of_pages == 1)  {
+        start_new_file(new_rec);
+        return 0;
+    }
+
+    /* Case: the tree already exists.
+     * (Rest of function body.)
+     */
+
+    leaf_offset = find_leaf(key);
+    leaf = load_page(leaf_offset);
+
+    /* Case: leaf has room for record.
+     */
+
+    if (leaf->num_keys < leaf_order - 1) {
+        insert_into_leaf(leaf, leaf_offset, new_rec);
+    }
+
+    /* Case: right sibling leaf has room for record.
+     */
+    else if (has_room_for_record(leaf->next_offset)) {
+        insert_into_leaf_using_key_rotation(leaf, leaf_offset, new_rec);
+    }
+
+    /* Case:  leaf must be split.
+     */
+    else {
+        insert_into_leaf_after_splitting(leaf, leaf_offset, new_rec);
+    }
+
+    free(leaf);
+    return 0;
 }
 
 

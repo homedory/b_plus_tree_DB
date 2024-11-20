@@ -67,16 +67,20 @@ off_t find_leaf(int key);
 
 // Insertion Utility Functions
 record * make_record(int64_t key, char * value);
-int get_left_index(off_t parent_page_offest, off_t left_page_offset);
-void insert_into_leaf(page * leaf, off_t leaf_page_offset, record new_record);
-void insert_into_leaf_after_splitting(page * leaf, off_t leaf_page_offset, record new_record);
+int get_left_index(off_t parent_offest, off_t left_offset);
+void insert_into_leaf(page * leaf, off_t leaf_offset, record new_record);
+void insert_into_leaf_after_splitting(page * leaf, off_t leaf_offset, record new_record);
+
+void insert_into_leaf_using_key_rotation(page * leaf, off_t leaf_offset, record new_record);
+bool has_room_for_record(off_t leaf_offset);
+void update_key_for_key_rotation(page * leaf, off_t leaf_offset, int64_t key);
 
 void insert_into_node(page * parent, off_t parent_offset,
         int left_index, int64_t key, page * right, off_t right_offset);
 void insert_into_node_after_splitting(page * old_node, off_t old_node_offset, int left_index,
         int64_t key, page * right, off_t right_offset);
 
-void insert_into_parent(page * left, off_t left_page_offset, int64_t key, page * right, off_t right_page_offset);
+void insert_into_parent(page * left, off_t left_offset, int64_t key, page * right, off_t right_offset);
 void insert_into_new_root(page * left, off_t left_offset, int64_t key, page * right, off_t right_offset);
 // Deletion Utility Functions
 

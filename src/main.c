@@ -17,6 +17,7 @@ int main(){
                 result = db_find(input);
                 if (result) {
                     printf("Key: %ld, Value: %s\n", input, result);
+                    free(result);   
                 }
                 else
                     printf("Not Exists\n");
