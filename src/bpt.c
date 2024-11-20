@@ -180,6 +180,7 @@ off_t find_leaf(int key) {
             else break;
         }
         next_page_offset = c->b_f[i].p_offset;
+        free(c);
         c = load_page(next_page_offset);
     }
 
@@ -229,46 +230,45 @@ int get_left_index(off_t parent_offest, off_t left_offset) {
 /* Inserts a new record 
  * including key and value
 */
-void insert_into_leaf(page * leaf, off_t leaf_offset, record * new_record) {
+void insert_into_leaf(page * leaf, off_t leaf_offset, record new_record) {
     int i , insertion_point;
 
     insertion_point = 0;
     while(insertion_point < leaf->num_of_keys && 
-            leaf->records[insertion_point].key < new_record->key)
+            leaf->records[insertion_point].key < new_record.key)
         insertion_point++;
     
     for (i = leaf->num_of_keys; i > insertion_point; i--) 
-        memcpy(&(leaf->records[i]), &(leaf->records[i]), sizeof(record));
+        leaf->records[i] = leaf->records[i - 1];
     
-    memcpy(&(leaf->records[insertion_point]), new_record, sizeof(record));
+    leaf->records[insertion_point] = new_record;
     leaf->num_of_keys++;
-    pwrite(fd, leaf, sizeof(page), leaf_offset);
-    free(leaf);
-    // new_record free????
+    // pwrite(fd, leaf, sizeof(page), leaf_offset);
+    // free(leaf);
 }
 
-void insert_into_leaf_after_splitting(page * leaf, off_t leaf_offset, record * new_record) {
-    page * new_leaf,;
+void insert_into_leaf_after_splitting(page * leaf, off_t leaf_offset, record new_record) {
+    page * new_leaf;
     record * temp_records;
     int64_t new_key;
     int insertion_index, split, i, j;
     off_t new_leaf_offset;
 
     new_leaf = (page*)calloc(1, sizeof(page));
-    new_leaf_offset = new_page();
     temp_records = (record*)calloc(leaf_order, sizeof(record));
 
+    new_leaf_offset = new_page();
+
     insertion_index = 0;
-    while(insertion_index < leaf_order - 1 && leaf->records[insertion_index].key < new_record->key) {
+    while(insertion_index < leaf_order - 1 && leaf->records[insertion_index].key < new_record.key)
         insertion_index++;
-    }
 
     for (i = 0, j = 0; i < leaf->num_of_keys; i++, j++) {
         if (j == insertion_index) j++;
         temp_records[j] = leaf->records[i];
     }
 
-    memcpy(&(temp_records[i]), new_record, sizeof(record));
+    temp_records[i] = new_record;
 
     leaf->num_of_keys = 0;
     new_leaf->num_of_keys = 0;
@@ -299,11 +299,12 @@ void insert_into_leaf_after_splitting(page * leaf, off_t leaf_offset, record * n
 
     // disk write page and free memory will be conducted in other functions
 
-    // pwrite(fd, new_leaf, sizeof(page), new_page_offset);
+    pwrite(fd, new_leaf, sizeof(page), new_leaf_offset);
+    free(new_leaf);
     // pwrite(fd, leaf, sizeof(page), leaf_page_offset);
 
     // free(leaf);
-    // free(new_leaf);
+    
 }
 
 /* Inserts a new key and page number to a node
@@ -330,11 +331,11 @@ void insert_into_node(page * parent, off_t parent_offset,
     parent->num_of_keys++;
 
     right->parent_page_offset = parent_offset;
-    pwrite(fd, right, sizeof(page), right_offset);
-    free(parent);
+    // pwrite(fd, right, sizeof(page), right_offset);
+    // free(parent);
 
-    pwrite(fd, parent, sizeof(page), parent_offset);
-    free(right);
+    // pwrite(fd, parent, sizeof(page), parent_offset);
+    // free(right);
 }
 
 /* Inserts a new key and page number to a node
@@ -348,8 +349,7 @@ void insert_into_node_after_splitting(page * old_node, off_t old_node_offset, in
     int64_t k_prime;
     page * new_node, * child;
     I_R * temp_b_fs;
-    off_t new_node_offset, temp_leftmost;
-
+    off_t new_node_offset, child_offset, temp_leftmost;
 
     /* First create a temporary array of branch_factor
      * to hold everything in order, including
@@ -394,10 +394,27 @@ void insert_into_node_after_splitting(page * old_node, off_t old_node_offset, in
         new_node->num_keys++;
     }
 
-    // 여기서부터 다시
-    
-}   
+    free(temp_b_fs);
 
+    for (i = 0; i < new_node->num_of_keys; i++) {
+        child_offset = new_node->b_f[i].p_offset;
+        child = load_page(child_offset);
+        child->parent_page_offset = new_node_offset;
+        pwrite(fd, child, sizeof(page), child_offset);
+        free(child);
+    }
+    
+    // pwrite(fd, right, sizeof(page), right_offset);
+    // free(right);
+    insert_into_parent(old_node, old_node_offset, k_prime, new_node, new_node_offset);
+
+    pwrite(fd, new_node, sizeof(page), new_node_offset);
+    free(new_node);
+}  
+ 
+/* Inserts a new node (leaf or internal node) into the B+ tree.
+ * Returns the root of the tree after insertion.
+ */
 void insert_into_parent(page * left, off_t left_offset, int64_t key, page * right, off_t right_offset) {
     int left_index;
     off_t parent_offset;
@@ -426,21 +443,23 @@ void insert_into_parent(page * left, off_t left_offset, int64_t key, page * righ
     /* Simple case: the new key fits into the node. 
      */
 
-
-    // 여기부터 다시ㅣㅣㅣㅣㅣㅣㅣ
     if (parent->num_of_keys < internal_order - 1) {
         insert_into_node(parent, parent_offset, left_index, key, right, right_offset);
-        pwrite(fd, left, sizeof(page), left_offset);
-        free(left);
-        return;
+        // pwrite(fd, left, sizeof(page), left_offset);
+        // free(left);
     }
 
     /* Harder case:  split a node in order 
      * to preserve the B+ tree properties.
      */
-
-    insert_into_node_after_splitting(parent, left_index, key, right);
-
+    
+    else {
+        // pwrite(fd, left, sizeof(page), left_offset);
+        // free(left);
+        insert_into_node_after_splitting(parent, parent_offset, left_index, key, right, right_offset);
+    }
+    pwrite(fd, parent, sizeof(page), parent_offset);
+    free(parent);
 }
 
 /* Creates a new root for two subtrees
@@ -467,12 +486,12 @@ void insert_into_new_root(page * left, off_t left_offset, int64_t key, page * ri
     pwrite(fd, rt, sizeof(page), root_offset);
 
     left->parent_page_offset = root_offset;
-    pwrite(fd, left, sizeof(page), left_offset);
-    free(left);
+    // pwrite(fd, left, sizeof(page), left_offset);
+    // free(left);
 
     right->parent_page_offset = root_offset;
-    pwrite(fd, right, sizeof(page), right_offset);
-    free(right);
+    // pwrite(fd, right, sizeof(page), right_offset);
+    // free(right);
 }
 
 // Deletion Utility Functions
@@ -493,7 +512,7 @@ char * db_find(int64_t key) {
 }
 
 int db_insert(int64_t key, char * value) {
-
+    
 
 }
 
