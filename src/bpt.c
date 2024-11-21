@@ -587,8 +587,8 @@ void insert_into_new_root(page * left, off_t left_offset, int64_t key, page * ri
 
 /* Utility function for deletion.  Retrieves
  * the index of a node's nearest neighbor (sibling)
- * to the right if one exists.  If not (the node
- * is the rightmost child), returns -1 to signify
+ * to the left if one exists.  If not (the node
+ * is the leftmost child), returns -1 to signify
  * this special case.
  */
 int get_neighbor_index( page * node, off_t node_offset ) {
@@ -599,10 +599,10 @@ int get_neighbor_index( page * node, off_t node_offset ) {
     parent_offset = node->parent_page_offset;
     parent = load_page(parent_offset);
 
-    /* Return the index of the key to the right
-     * of the pointer in the parent pointing
+    /* Return the index of the key to the left
+     * of the p_offset in the parent pointing
      * to node.  
-     * If node is the rightmost child, this means
+     * If node is the lefttmost child, this means
      * return -1.
      */
 
@@ -610,18 +610,18 @@ int get_neighbor_index( page * node, off_t node_offset ) {
         if (parent->b_f[i].p_offset == node_offset)
             break;
 
-    // case: node is leftmost node, return value 0
-    if (node->next_offset == node_offset)
-        i = -1;
-    // case: node is rightmost node, return value -1
-    else if (i == parent->num_of_keys)
-        i = -2;
+    // case: neighbor node (left sibling) is leftmost node
+    if (i == 0)
+        i = internal_order;
+    // case: node is leftmost node which means there is no left sibling, return value is -1
+    else if (node_offset == parent->next_offset)
+        i = 0;
     
     free(parent);
-    return i + 1;
+    return i - 1;
 }
 
-void remove_entry_from_node(page * node, off_t node_offset, int64_t key) {
+void remove_entry_from_node(page * node, off_t node_offset, int64_t key, off_t entry_offset) {
 
     int i, num_entries;
 
@@ -676,7 +676,23 @@ void remove_entry_from_node(page * node, off_t node_offset, int64_t key) {
     return n;
 }
 
+void adjust_root(page * root) {
 
+    page * new_root;
+
+    /* Case: nonempty root.
+     * Key and pointer have already been deleted,
+     * so nothing to be done.
+     */
+
+    if (root->num_keys > 0)
+        return;
+
+    /* Case: empty root. 
+     */
+
+    // checkpoint
+}
 
 
 /* Deletes an entry from the B+ tree.
@@ -684,25 +700,26 @@ void remove_entry_from_node(page * node, off_t node_offset, int64_t key) {
  * from the leaf, and then makes all appropriate
  * changes to preserve the B+ tree properties.
  */
-void delete_entry(page * node, off_t node_offset, int64_t key, void * pointer ) {
+void delete_entry(page * node, off_t node_offset, int64_t key, off_t entry_offset) {
 
     int min_keys;
-    page * parent, neighbor;
+    page * parent, * neighbor;
     off_t parent_offset, neighbor_offset;
-    int neighbor_index;
-    int k_prime_index; 
     int64_t k_prime;
+    int neighbor_index, k_prime_index; 
     int capacity;
 
     // Remove key and pointer from node.
 
-    n = remove_entry_from_node(n, key, (node *)pointer);
+    remove_entry_from_node(node, node_offset, key, entry_offset);
 
     /* Case:  deletion from the root. 
      */
 
-    if (n == root) 
-        return adjust_root(root);
+    if (node_offset == hp->rpo) {
+        adjust_root(node);
+        return;
+    }
 
 
     /* Case:  deletion from a node below the root.
@@ -713,14 +730,14 @@ void delete_entry(page * node, off_t node_offset, int64_t key, void * pointer ) 
      * to be preserved after deletion.
      */
 
-    min_keys = n->is_leaf ? cut(order - 1) : cut(order) - 1;
+    min_keys = n->is_leaf ? cut(leaf_order - 1) : cut(internal_order) - 1;
 
     /* Case:  node stays at or above minimum.
      * (The simple case.)
      */
 
     if (n->num_keys >= min_keys)
-        return root;
+        return;
 
     /* Case:  node falls below minimum.
      * Either coalescence or redistribution
@@ -737,28 +754,36 @@ void delete_entry(page * node, off_t node_offset, int64_t key, void * pointer ) 
     parent_offset = node->parent_page_offset;
     parent = load_page(parent_offset);
 
-    // 중요 !!!!!!! 고려해서 수정했음
-    // get right sibling node index in parent, if -1 it means there is no right sibling node
+    // get left sibling node index in parent, if -1 it means there is no left sibling node
     neighbor_index = get_neighbor_index(node, node_offset);
-    k_prime_index = neighbor_index == -1 ? parent->num_of_keys - 1 : neighbor_index;
+
+    if (neighbor_index == -1 || neighbor_index == internal_order - 1) {
+        k_prime_index = 0;
+        neighbor_offset = parent->b_f[0].p_offset;
+    }
+    else {
+        k_prime_index = neighbor_index;
+        neighbor_offset = parent->b_f[neighbor_index].p_offset;
+    }
     k_prime = parent->b_f[k_prime_index].key;
+    neighbor = load_page(neighbor_offset);
 
-    neighbor_offset = neighbor_index == -1 ? parent->b_f[parent->num_of_keys - 1].p_offset : 
-        parent->b_f[neighbor_index].p_offset; //여기서 그럼 neighbor index가 leftmost 이면 에러날듯 -> offset구하는 함수 만들어줘야될듯
-
-    capacity = n->is_leaf ? order : order - 1;
+    capacity = n->is_leaf ? leaf_order : internal_order - 1;
 
 
     free(parent);
     /* Coalescence. */
 
-    if (neighbor->num_keys + n->num_keys < capacity)
-        return coalesce_nodes(root, n, neighbor, neighbor_index, k_prime);
+    if (neighbor->num_of_keys + node->num_of_keys < capacity)
+        coalesce_nodes(node, neighbor, neighbor_index, k_prime);
 
     /* Redistribution. */
 
     else
-        return redistribute_nodes(root, n, neighbor, neighbor_index, k_prime_index, k_prime);
+        redistribute_nodes(node, node_offset, neighbor, neighbor_offset, neighbor_index, k_prime_index, k_prime);
+    
+    pwrite(fd, neighbor, sizeof(page), neighbor_offset);
+    free(neighbor);
 }
 
 
