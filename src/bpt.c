@@ -585,6 +585,183 @@ void insert_into_new_root(page * left, off_t left_offset, int64_t key, page * ri
 // Deletion Utility Functions
 
 
+/* Utility function for deletion.  Retrieves
+ * the index of a node's nearest neighbor (sibling)
+ * to the right if one exists.  If not (the node
+ * is the rightmost child), returns -1 to signify
+ * this special case.
+ */
+int get_neighbor_index( page * node, off_t node_offset ) {
+    page * parent;
+    off_t parent_offset;
+    int i;
+
+    parent_offset = node->parent_page_offset;
+    parent = load_page(parent_offset);
+
+    /* Return the index of the key to the right
+     * of the pointer in the parent pointing
+     * to node.  
+     * If node is the rightmost child, this means
+     * return -1.
+     */
+
+    for (i = 0; i < parent->num_of_keys; i++)
+        if (parent->b_f[i].p_offset == node_offset)
+            break;
+
+    // case: node is leftmost node, return value 0
+    if (node->next_offset == node_offset)
+        i = -1;
+    // case: node is rightmost node, return value -1
+    else if (i == parent->num_of_keys)
+        i = -2;
+    
+    free(parent);
+    return i + 1;
+}
+
+void remove_entry_from_node(page * node, off_t node_offset, int64_t key) {
+
+    int i, num_entries;
+
+    if (!node->is_leaf && ) {
+
+    }
+
+    if (node->is_leaf) {
+        // Remove the record and shift other records accordingly.
+        i = 0;
+        while (node->records[i].key != key) 
+            i++;
+        for (++i; i < node->num_of_keys; i++)
+            node->records[i - 1] = node->records[i];
+        
+        // One key fewer.
+        node->num_of_keys--;
+    }
+    else {
+
+    }
+
+    // Remove the entry and shift other entries accordingly.
+    i = 0;
+    while (node->keys[i] != key)
+        i++;
+    for (++i; i < n->num_keys; i++)
+        n->keys[i - 1] = n->keys[i];
+
+    // Remove the pointer and shift other pointers accordingly.
+    // First determine number of pointers.
+    num_entries = n->is_leaf ? n->num_keys : n->num_keys + 1;
+    i = 0;
+    while (n->pointers[i] != pointer)
+        i++;
+    for (++i; i < num_entries; i++)
+        n->pointers[i - 1] = n->pointers[i];
+
+
+    // One key fewer.
+    n->num_keys--;
+
+    // Set the other pointers to NULL for tidiness.
+    // A leaf uses the last pointer to point to the next leaf.
+    if (n->is_leaf)
+        for (i = n->num_keys; i < order - 1; i++)
+            n->pointers[i] = NULL;
+    else
+        for (i = n->num_keys + 1; i < order; i++)
+            n->pointers[i] = NULL;
+
+    return n;
+}
+
+
+
+
+/* Deletes an entry from the B+ tree.
+ * Removes the record and its key and pointer
+ * from the leaf, and then makes all appropriate
+ * changes to preserve the B+ tree properties.
+ */
+void delete_entry(page * node, off_t node_offset, int64_t key, void * pointer ) {
+
+    int min_keys;
+    page * parent, neighbor;
+    off_t parent_offset, neighbor_offset;
+    int neighbor_index;
+    int k_prime_index; 
+    int64_t k_prime;
+    int capacity;
+
+    // Remove key and pointer from node.
+
+    n = remove_entry_from_node(n, key, (node *)pointer);
+
+    /* Case:  deletion from the root. 
+     */
+
+    if (n == root) 
+        return adjust_root(root);
+
+
+    /* Case:  deletion from a node below the root.
+     * (Rest of function body.)
+     */
+
+    /* Determine minimum allowable size of node,
+     * to be preserved after deletion.
+     */
+
+    min_keys = n->is_leaf ? cut(order - 1) : cut(order) - 1;
+
+    /* Case:  node stays at or above minimum.
+     * (The simple case.)
+     */
+
+    if (n->num_keys >= min_keys)
+        return root;
+
+    /* Case:  node falls below minimum.
+     * Either coalescence or redistribution
+     * is needed.
+     */
+
+    /* Find the appropriate neighbor node with which
+     * to coalesce.
+     * Also find the key (k_prime) in the parent
+     * between the pointer to node n and the pointer
+     * to the neighbor.
+     */
+
+    parent_offset = node->parent_page_offset;
+    parent = load_page(parent_offset);
+
+    // 중요 !!!!!!! 고려해서 수정했음
+    // get right sibling node index in parent, if -1 it means there is no right sibling node
+    neighbor_index = get_neighbor_index(node, node_offset);
+    k_prime_index = neighbor_index == -1 ? parent->num_of_keys - 1 : neighbor_index;
+    k_prime = parent->b_f[k_prime_index].key;
+
+    neighbor_offset = neighbor_index == -1 ? parent->b_f[parent->num_of_keys - 1].p_offset : 
+        parent->b_f[neighbor_index].p_offset; //여기서 그럼 neighbor index가 leftmost 이면 에러날듯 -> offset구하는 함수 만들어줘야될듯
+
+    capacity = n->is_leaf ? order : order - 1;
+
+
+    free(parent);
+    /* Coalescence. */
+
+    if (neighbor->num_keys + n->num_keys < capacity)
+        return coalesce_nodes(root, n, neighbor, neighbor_index, k_prime);
+
+    /* Redistribution. */
+
+    else
+        return redistribute_nodes(root, n, neighbor, neighbor_index, k_prime_index, k_prime);
+}
+
+
 char * db_find(int64_t key) {
     int i;
     page * leaf;
