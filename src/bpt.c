@@ -94,7 +94,7 @@ void usetofree(off_t wbf) {
     pwrite(fd, utf, sizeof(page), wbf);
     free(utf);
     hp->fpo = wbf;
-    pwrite(fd, hp, sizeof(hp), 0);
+    pwrite(fd, hp, sizeof(H_P), 0);
     free(hp);
     hp = load_header(0);
     return;
@@ -110,7 +110,7 @@ off_t new_page() {
         newp = hp->fpo;
         np = load_page(newp);
         hp->fpo = np->parent_page_offset;
-        pwrite(fd, hp, sizeof(hp), 0);
+        pwrite(fd, hp, sizeof(H_P), 0);
         free(hp);
         hp = load_header(0);
         free(np);
@@ -138,7 +138,9 @@ int cut(int length) {
 }
 
 
-
+/* First insertion:
+ * start a new tree.
+ */
 void start_new_file(record rec) {
 
     page * root;
@@ -165,12 +167,11 @@ off_t find_leaf(int key) {
     off_t next_offset;
     int i = 0;
 
-    // Empty Tree, return header page offset
+    // tree does not exist yet, return header page offset
     if (hp->num_of_pages == 1) {
         return 0;
     }
-    page * c = (page*)calloc(1, sizeof(page)); 
-    memcpy(c, rt, sizeof(page)); // start from root page
+    page * c = load_page(hp->rpo); // start from root page
     
     next_offset = hp->rpo;
     while (!c->is_leaf) {
@@ -243,8 +244,6 @@ void insert_into_leaf(page * leaf, off_t leaf_offset, record new_record) {
     
     leaf->records[insertion_point] = new_record;
     leaf->num_of_keys++;
-    // pwrite(fd, leaf, sizeof(page), leaf_offset);
-    // free(leaf);
 }
 
 /* Inserts a new record
@@ -419,11 +418,6 @@ void insert_into_node(page * parent, off_t parent_offset,
     parent->num_of_keys++;
 
     right->parent_page_offset = parent_offset;
-    // pwrite(fd, right, sizeof(page), right_offset);
-    // free(parent);
-
-    // pwrite(fd, parent, sizeof(page), parent_offset);
-    // free(right);
 }
 
 /* Inserts a new key and page number to a node
@@ -454,32 +448,38 @@ void insert_into_node_after_splitting(page * old_node, off_t old_node_offset, in
     // case: left_index is leftmost, set j = 1 to push all b_fs to right
     j = (left_index == internal_order - 1) ? 1 : 0;
 
-    for (i = 0; i < old_node->num_keys; i++, j++) {
+    for (i = 0; i < old_node->num_of_keys; i++, j++) {
         if (j == left_index + 1) j++;
         temp_b_fs[j] = old_node->b_f[i];
     }
 
-    temp_b_fs[left_index + 1].key = key;
-    temp_b_fs[left_index + 1].p_offset = right_offset;
-
+    // left node is leftmost child
+    if (left_index == internal_order - 1) {
+        temp_b_fs[0].key = key;
+        temp_b_fs[0].p_offset = right_offset;
+    }
+    else {
+        temp_b_fs[left_index + 1].key = key;
+        temp_b_fs[left_index + 1].p_offset = right_offset;
+    }
     /* Create the new node and copy
      * half the branch_factors to the
      * old and half to the new.
      */  
-    split = cut(leaf_order);
+    split = cut(internal_order);
     new_node_offset = new_page();
     new_node = load_page(new_node_offset);
     old_node->num_of_keys = 0;
     old_node->next_offset = temp_leftmost;
     for (i = 0; i < split - 1; i++) {
         old_node->b_f[i] = temp_b_fs[i];
-        old_node->num_keys++;
+        old_node->num_of_keys++;
     }
     k_prime = temp_b_fs[split - 1].key;
     new_node->next_offset = temp_b_fs[split - 1].p_offset;
-    for (++i, j = 0; i < leaf_order; i++, j++) {
+    for (++i, j = 0; i < internal_order; i++, j++) {
         new_node->b_f[j] = temp_b_fs[i];
-        new_node->num_keys++;
+        new_node->num_of_keys++;
     }
 
     free(temp_b_fs);
@@ -492,8 +492,16 @@ void insert_into_node_after_splitting(page * old_node, off_t old_node_offset, in
         free(child);
     }
     
-    // pwrite(fd, right, sizeof(page), right_offset);
-    // free(right);
+    // right의 parent가 무엇인지 확인하고 right->parent_page_offset 설정해줘야됨? -> 위에서 interation 하면서 child로 다 관리해줄듯?
+    // -> 생각해보니까 다시 right의 write은 상위 caller에서 하는데 여기서 수정한거는 disk에는 반영되고 right*의 인메모리 값은 안바뀌어서 수정 필요할듯
+    // checkpoint
+    // right node is a child of old_node
+    if (left_index + 1 < split - 1 || left_index == internal_order - 1)
+        right->parent_page_offset = old_node_offset;
+    // right node is a child of new_node
+    else
+        right->parent_page_offset = new_node_offset;
+    
     insert_into_parent(old_node, old_node_offset, k_prime, new_node, new_node_offset);
 
     pwrite(fd, new_node, sizeof(page), new_node_offset);
@@ -531,10 +539,10 @@ void insert_into_parent(page * left, off_t left_offset, int64_t key, page * righ
     /* Simple case: the new key fits into the node. 
      */
 
-    if (parent->num_of_keys < internal_order - 1) {
+    left->parent_page_offset = parent_offset;
+
+    if (parent->num_of_keys < internal_order - 1) {    
         insert_into_node(parent, parent_offset, left_index, key, right, right_offset);
-        // pwrite(fd, left, sizeof(page), left_offset);
-        // free(left);
     }
 
     /* Harder case:  split a node in order 
@@ -542,8 +550,6 @@ void insert_into_parent(page * left, off_t left_offset, int64_t key, page * righ
      */
     
     else {
-        // pwrite(fd, left, sizeof(page), left_offset);
-        // free(left);
         insert_into_node_after_splitting(parent, parent_offset, left_index, key, right, right_offset);
     }
     pwrite(fd, parent, sizeof(page), parent_offset);
@@ -571,7 +577,7 @@ void insert_into_new_root(page * left, off_t left_offset, int64_t key, page * ri
 
     free(rt);
     rt = root;
-    pwrite(fd, rt, sizeof(page), root_offset);
+    pwrite(fd, root, sizeof(page), root_offset);
 
     left->parent_page_offset = root_offset;
     // pwrite(fd, left, sizeof(page), left_offset);
@@ -676,22 +682,48 @@ void remove_entry_from_node(page * node, off_t node_offset, int64_t key, off_t e
     return n;
 }
 
-void adjust_root(page * root) {
+void adjust_root(page * root, off_t root_offset) {
 
     page * new_root;
+    off_t new_root_offset;
 
     /* Case: nonempty root.
      * Key and pointer have already been deleted,
      * so nothing to be done.
      */
 
-    if (root->num_keys > 0)
+    if (root->num_of_keys > 0) {
+        pwrite(fd, root, sizeof(page), root_offset);
+        free(root);
+        rt = root;
         return;
+    }
 
     /* Case: empty root. 
      */
 
+    // If it has a child, promote 
+    // the first (only) child
+    // as the new root.
+
+    if (!root->is_leaf) {
+        new_root_offset = root->next_offset;
+        new_root = load_page(new_root_offset);
+        new_root->parent_page_offset = 0;
+        pwrite(fd, new_root, sizeof(page), new_root_offset);
+        free(new_root);
+        hp->rpo = new_root_offset;
+        pwrite(fd, hp, sizeof(H_P), 0);
+    }
+
+    // If it is a leaf (has no children),
+    // then the whole tree is empty.
+    // remove root page
+    
     // checkpoint
+    else {
+        usetofree(root_offset);
+    }
 }
 
 
@@ -795,7 +827,9 @@ char * db_find(int64_t key) {
     
     leaf_offset = find_leaf(key);
 
-    // Empty Tree
+    /* Case: the tree does not exist yet.
+     * Start a new tree.
+     */
     if (leaf_offset == 0) 
         return NULL;
 
@@ -864,6 +898,7 @@ int db_insert(int64_t key, char * value) {
         insert_into_leaf_after_splitting(leaf, leaf_offset, new_rec);
     }
 
+    pwrite(fd, leaf, sizeof(page), leaf_offset);
     free(leaf);
     return 0;
 }
