@@ -58,7 +58,7 @@ int open_table(char * pathname) {
     else return -1;
 }
 
-// fucnction to reset a page when making a new free page
+/* fucnction to reset a page when making a new free page */
 void reset(off_t off) {
     page * reset;
     reset = (page*)calloc(1, sizeof(page));
@@ -71,7 +71,7 @@ void reset(off_t off) {
     return;
 }
 
-// function to free page before use
+/* function to free page before use */
 void freetouse(off_t fpo) {
     page * reset;
     reset = load_page(fpo);
@@ -84,7 +84,7 @@ void freetouse(off_t fpo) {
     return;
 }
 
-// function to free page and add it to header page
+/* function to free page and add it to header page */
 void usetofree(off_t wbf) {
     page * utf = load_page(wbf);
     utf->parent_page_offset = hp->fpo;
@@ -101,7 +101,7 @@ void usetofree(off_t wbf) {
 }
 
 
-// function to get a free page
+/* function to get a free page */
 off_t new_page() {
     off_t newp;
     page * np;
@@ -163,7 +163,11 @@ void start_new_file(record rec) {
 
 // Find Utitlity Function
 
-off_t find_leaf(int key) {
+
+/* Traces the path from the root to a leaf, searching by key. 
+ * Returns the leaf_offset containing the given key.
+ */
+off_t find_leaf(int64_t key) {
     off_t next_offset;
     int i = 0;
 
@@ -193,29 +197,15 @@ off_t find_leaf(int key) {
 // Insertion Utility Functions
 
 
-/* Creates a new record to hold the value
- * to which a key refers.
- */
-record * make_record(int64_t key, char * value) {
-    record *new_record = (record*)calloc(1, sizeof(record));
-    if (new_record == NULL) {
-        perror("record creation.");
-        exit(EXIT_FAILURE);
-    }
-    new_record->key = key;
-    memcpy(new_record->value, value, record_value_size*sizeof(char));
-    return new_record;
-}
-
 /* Helper function used in insert_into_parent
- * to find the index of the parent's index of branch_factors to 
- * the node to the left of the key to be inserted.
+ * to find the index in the parent's branch_factors array
+ * corresponding to the node immediately to the left of the key to be inserted.
 */
 int get_left_index(off_t parent_offest, off_t left_offset) {
     int left_index = 0;
     page * parent = load_page(parent_offest);    
     while (left_index < parent->num_of_keys &&
-            parent->b_f[left_index]->p_offset != left_offset)
+            parent->b_f[left_index].p_offset != left_offset)
         left_index++;
     
     // case: left_offset is in leftmost
@@ -394,6 +384,7 @@ void update_key_for_key_rotation(page * leaf, off_t leaf_offset, int64_t key) {
     free(upper);
 }
 
+
 /* Inserts a new key and page number to a node
  * into a node into which these can fit
  * without violating the B+ tree properties.
@@ -419,6 +410,7 @@ void insert_into_node(page * parent, off_t parent_offset,
 
     right->parent_page_offset = parent_offset;
 }
+
 
 /* Inserts a new key and page number to a node
  * into a node, causing the node's size to exceed
@@ -492,9 +484,6 @@ void insert_into_node_after_splitting(page * old_node, off_t old_node_offset, in
         free(child);
     }
     
-    // right의 parent가 무엇인지 확인하고 right->parent_page_offset 설정해줘야됨? -> 위에서 interation 하면서 child로 다 관리해줄듯?
-    // -> 생각해보니까 다시 right의 write은 상위 caller에서 하는데 여기서 수정한거는 disk에는 반영되고 right*의 인메모리 값은 안바뀌어서 수정 필요할듯
-    // checkpoint
     // right node is a child of old_node
     if (left_index + 1 < split - 1 || left_index == internal_order - 1)
         right->parent_page_offset = old_node_offset;
@@ -507,6 +496,7 @@ void insert_into_node_after_splitting(page * old_node, off_t old_node_offset, in
     pwrite(fd, new_node, sizeof(page), new_node_offset);
     free(new_node);
 }  
+ 
  
 /* Inserts a new node (leaf or internal node) into the B+ tree.
  * Returns the root of the tree after insertion.
@@ -556,6 +546,7 @@ void insert_into_parent(page * left, off_t left_offset, int64_t key, page * righ
     free(parent);
 }
 
+
 /* Creates a new root for two subtrees
  * and inserts the appropriate key into
  * the new root.
@@ -580,12 +571,8 @@ void insert_into_new_root(page * left, off_t left_offset, int64_t key, page * ri
     pwrite(fd, root, sizeof(page), root_offset);
 
     left->parent_page_offset = root_offset;
-    // pwrite(fd, left, sizeof(page), left_offset);
-    // free(left);
 
     right->parent_page_offset = root_offset;
-    // pwrite(fd, right, sizeof(page), right_offset);
-    // free(right);
 }
 
 // Deletion Utility Functions
@@ -597,7 +584,7 @@ void insert_into_new_root(page * left, off_t left_offset, int64_t key, page * ri
  * is the leftmost child), returns -1 to signify
  * this special case.
  */
-int get_neighbor_index( page * node, off_t node_offset ) {
+int get_neighbor_index(page * node, off_t node_offset) {
     page * parent;
     off_t parent_offset;
     int i;
@@ -627,59 +614,29 @@ int get_neighbor_index( page * node, off_t node_offset ) {
     return i - 1;
 }
 
-void remove_entry_from_node(page * node, off_t node_offset, int64_t key, off_t entry_offset) {
+// Assumes that the entry is to the right of the key in the node.
+void remove_entry_from_node(page * node, int64_t key) {
 
     int i, num_entries;
 
-    if (!node->is_leaf && ) {
-
-    }
+    // The key and entry share the same index because the entry is immediately to the right of the key.
 
     if (node->is_leaf) {
-        // Remove the record and shift other records accordingly.
         i = 0;
-        while (node->records[i].key != key) 
+        while (node->records[i].key != key)
             i++;
-        for (++i; i < node->num_of_keys; i++)
+        for (++i; i < node->num_of_keys; i++) 
             node->records[i - 1] = node->records[i];
-        
-        // One key fewer.
-        node->num_of_keys--;
     }
     else {
-
+        i = 0;
+        while (node->b_f[i].key != key)
+            i++;
+        for (++i; i < node->num_of_keys; i++) 
+            node->b_f[i - 1] = node->b_f[i];
     }
 
-    // Remove the entry and shift other entries accordingly.
-    i = 0;
-    while (node->keys[i] != key)
-        i++;
-    for (++i; i < n->num_keys; i++)
-        n->keys[i - 1] = n->keys[i];
-
-    // Remove the pointer and shift other pointers accordingly.
-    // First determine number of pointers.
-    num_entries = n->is_leaf ? n->num_keys : n->num_keys + 1;
-    i = 0;
-    while (n->pointers[i] != pointer)
-        i++;
-    for (++i; i < num_entries; i++)
-        n->pointers[i - 1] = n->pointers[i];
-
-
-    // One key fewer.
-    n->num_keys--;
-
-    // Set the other pointers to NULL for tidiness.
-    // A leaf uses the last pointer to point to the next leaf.
-    if (n->is_leaf)
-        for (i = n->num_keys; i < order - 1; i++)
-            n->pointers[i] = NULL;
-    else
-        for (i = n->num_keys + 1; i < order; i++)
-            n->pointers[i] = NULL;
-
-    return n;
+    node->num_of_keys--;
 }
 
 void adjust_root(page * root, off_t root_offset) {
@@ -695,7 +652,6 @@ void adjust_root(page * root, off_t root_offset) {
     if (root->num_of_keys > 0) {
         pwrite(fd, root, sizeof(page), root_offset);
         free(root);
-        rt = root;
         return;
     }
 
@@ -712,6 +668,8 @@ void adjust_root(page * root, off_t root_offset) {
         new_root->parent_page_offset = 0;
         pwrite(fd, new_root, sizeof(page), new_root_offset);
         free(new_root);
+        free(root);
+        usetofree(root_offset);
         hp->rpo = new_root_offset;
         pwrite(fd, hp, sizeof(H_P), 0);
     }
@@ -720,10 +678,208 @@ void adjust_root(page * root, off_t root_offset) {
     // then the whole tree is empty.
     // remove root page
     
-    // checkpoint
     else {
+        free(root);
         usetofree(root_offset);
     }
+}
+
+/* Coalesces a node that has become
+ * too small after deletion
+ * with a neighboring node that
+ * can accept the additional entries
+ * without exceeding the maximum.
+ */
+void coalesce_nodes(page * node, off_t node_offset, page * neighbor, off_t neighbor_offset,
+        int neighbor_index, int64_t k_prime) {
+
+    int i, j, neighbor_insertion_index, node_end;
+    page * temp_node, * parent, * child;
+    off_t temp_offset, parent_offset, child_offset;
+
+    /* Swap neighbor with node if node is on the
+     * extreme left and neighbor is to its right.
+     */
+
+    if (neighbor_index == -1) {
+        temp_node = node;
+        temp_offset = node_offset;
+        node = neighbor;
+        node_offset = neighbor_offset;
+        neighbor = temp_node;
+        neighbor_offset = temp_offset;
+    }
+
+    /* Starting point in the neighbor for copying
+     * keys and pointers from n.
+     * Recall that n and neighbor have swapped places
+     * in the special case of n being a leftmost child.
+     */
+
+    neighbor_insertion_index = neighbor->num_of_keys;
+    node_end = node->num_of_keys;
+
+    /* Case:  nonleaf node.
+     * Append k_prime and the following pointer.
+     * Append all pointers and keys from the neighbor.
+     */
+
+    if (!n->is_leaf) {
+
+        /* Append k_prime.
+         */
+
+        neighbor->b_f[neighbor_insertion_index].key = k_prime;
+        neighbor->b_f[neighbor_insertion_index].p_offset = node->next_offset;
+        neighbor->num_of_keys++;
+
+        // update child's parent
+        child_offset = node->next_offset;
+        child = load_page(child_offset);
+        child->parent_page_offset = neighbor_offset;
+        pwrite(fd, child, sizeof(page), child_offset);
+        free(child);
+
+
+        for (i = neighbor_insertion_index + 1, j = 0; j < node_end; i++, j++) {
+            neighbor->b_f[i] = node->b_f[j];
+            neighbor->num_of_keys++;
+            node->num_of_keys--;
+
+            child_offset = node->b_f[j].p_offset;
+            child = load_page(child_offset);
+            child->parent_page_offset = neighbor_offset;
+            pwrite(fd, child, sizeof(page), child_offset);
+            free(child);
+        }
+    }
+
+    /* In a leaf, append the keys and pointers of
+     * n to the neighbor.
+     * Set the neighbor's last pointer to point to
+     * what had been node's right neighbor.
+     */
+
+    else {
+        for (i = neighbor_insertion_index, j = 0; j < node_end; i++, j++) {
+            neighbor->records[i] = node->records[j];
+            neighbor->num_of_keys++;
+            node->num_of_keys--;
+        }
+        neighbor->next_offset = node->next_offset;
+    }
+
+    parent_offset = node->parent_page_offset;
+    parent = load_page(parent_offset);
+
+    // node should be deleted beacuse it was coalesced
+    free(node);
+    usetofree(node_offset);
+
+    // delete k_prime and deleted node's entry from parent
+    delete_entry(parent, parent_offset, k_prime);
+
+    // The caller function, delete_entry, will handle the disk write for the neighbor node
+    // The callee function, delete_entry, will handle the disk write for the parent node
+}
+
+
+/* Redistributes entries between two nodes when
+ * one has become too small after deletion
+ * but its neighbor is too big to append the
+ * small node's entries without exceeding the
+ * maximum
+ */
+void redistribute_nodes(page * node, off_t node_offset, page * neighbor, off_t neighbor_offset,
+        int neighbor_index, int k_prime_index, int k_prime) {  
+
+    int i;
+    page * child, * parent, * temp_node;
+    off_t child_offset, parent_offset;
+
+    parent_offset = node->parent_page_offset;
+    parent = load_page(parent_offset);   
+
+    /* Case: node has a neighbor to the left. 
+     * Pull the neighbor's last key-pointer pair over
+     * from the neighbor's right end to node's left end.
+     */
+
+    if (neighbor_index != -1) {
+        if (!node->is_leaf) {
+            for (i = node->num_of_keys; i > 0; i--) {
+                node->b_f[i] = node->b_f[i - 1];
+            }
+            node->b_f[0].p_offset = node->next_offset;
+            node->b_f[0].key = k_prime;
+            node->next_offset = neighbor->b_f[neighbor->num_of_keys - 1].p_offset;
+            
+            child_offset = neighbor->b_f[neighbor->num_of_keys - 1].p_offset;
+            child = load_page(child_offset);
+            child->parent_page_offset = node_offset;
+            pwrite(fd, child, sizeof(page), child_offset);
+            free(child);
+
+            parent->b_f[k_prime_index].key = neighbor->b_f[neighbor->num_of_keys - 1].key;
+        }
+        else {
+            for (i = node->num_of_keys; i > 0; i--) {
+                node->records[i] = node->records[i - 1];
+            }
+            node->records[0] = neighbor->records[neighbor->num_of_keys - 1];
+
+            parent->b_f[k_prime_index].key = node->records[0].key;
+        }
+    }
+
+    /* Case: node is the leftmost child.
+     * Take a key-pointer pair from the neighbor to the right.
+     * Move the neighbor's leftmost key-pointer pair
+     * to node's rightmost position.
+     */
+
+    else {
+        if (!node->is_leaf) {
+            node->b_f[node->num_of_keys].key = k_prime;
+            node->b_f[node->num_of_keys].p_offset = neighbor->next_offset;
+            
+            child_offset = neighbor->next_offset;
+            child = load_page(child_offset);
+            child->parent_page_offset = node_offset;
+            pwrite(fd, child, sizeof(page), child_offset);
+            free(child);
+            
+            parent->b_f[k_prime_index].key = neighbor->b_f[0].key;
+
+            neighbor->next_offset = neighbor->b_f[0].p_offset;
+            for (i = 0; i < neighbor->num_of_keys - 1; i++) {
+                neighbor->b_f[i] = neighbor->b_f[i + 1];
+            }
+        }
+        else {
+            node->records[node->num_of_keys] = neighbor->records[0];
+            for (i = 0; i < neighbor->num_of_keys - 1; i++) {
+                neighbor->records[i] = neighbor->records[i + 1];
+            }
+
+            parent->b_f[k_prime_index].key = node->records[node->num_of_keys].key;  
+        }
+    }
+
+    pwrite(fd, parent, sizeof(page), parent_offset);
+    free(parent);
+
+    /* n now has one more key and one more pointer;
+     * the neighbor has one fewer of each.
+     */
+
+    n->num_keys++;
+    neighbor->num_keys--;
+
+    pwrite(fd, node, sizeof(page), node_offset);
+    free(node);
+
+    // The caller function, delete_entry, will handle the disk write for the neighbor node
 }
 
 
@@ -732,7 +888,7 @@ void adjust_root(page * root, off_t root_offset) {
  * from the leaf, and then makes all appropriate
  * changes to preserve the B+ tree properties.
  */
-void delete_entry(page * node, off_t node_offset, int64_t key, off_t entry_offset) {
+void delete_entry(page * node, off_t node_offset, int64_t key) {
 
     int min_keys;
     page * parent, * neighbor;
@@ -743,13 +899,13 @@ void delete_entry(page * node, off_t node_offset, int64_t key, off_t entry_offse
 
     // Remove key and pointer from node.
 
-    remove_entry_from_node(node, node_offset, key, entry_offset);
+    remove_entry_from_node(node, key);
 
     /* Case:  deletion from the root. 
      */
 
     if (node_offset == hp->rpo) {
-        adjust_root(node);
+        adjust_root(node, node_offset);
         return;
     }
 
@@ -762,13 +918,13 @@ void delete_entry(page * node, off_t node_offset, int64_t key, off_t entry_offse
      * to be preserved after deletion.
      */
 
-    min_keys = n->is_leaf ? cut(leaf_order - 1) : cut(internal_order) - 1;
+    min_keys = node->is_leaf ? cut(leaf_order - 1) : cut(internal_order) - 1;
 
     /* Case:  node stays at or above minimum.
      * (The simple case.)
      */
 
-    if (n->num_keys >= min_keys)
+    if (node->num_of_keys >= min_keys)
         return;
 
     /* Case:  node falls below minimum.
@@ -800,14 +956,14 @@ void delete_entry(page * node, off_t node_offset, int64_t key, off_t entry_offse
     k_prime = parent->b_f[k_prime_index].key;
     neighbor = load_page(neighbor_offset);
 
-    capacity = n->is_leaf ? leaf_order : internal_order - 1;
+    capacity = node->is_leaf ? leaf_order : internal_order - 1;
 
 
     free(parent);
     /* Coalescence. */
 
     if (neighbor->num_of_keys + node->num_of_keys < capacity)
-        coalesce_nodes(node, neighbor, neighbor_index, k_prime);
+        coalesce_nodes(node, node_offset, neighbor, neighbor_offset, neighbor_index, k_prime);
 
     /* Redistribution. */
 
@@ -816,8 +972,44 @@ void delete_entry(page * node, off_t node_offset, int64_t key, off_t entry_offse
     
     pwrite(fd, neighbor, sizeof(page), neighbor_offset);
     free(neighbor);
+    /* The callee function (delete_entry, coalesce_nodes, redistrubute_nodes) 
+     * handled the disk write or free page for the node
+     */
 }
 
+
+/* Helper function to check if a value already exists for the given key.
+ * Returns the leaf offset if the key exists; otherwise, returns 0, 
+ * which corresponds to the header page offset.
+ */
+off_t find_leaf_if_value_exists(int64_t key) {
+    int i;
+    page * leaf;
+    off_t leaf_offset;
+    
+    leaf_offset = find_leaf(key);
+
+    /* Case: the tree does not exist yet.
+     * Start a new tree.
+     */
+    if (leaf_offset == 0) 
+        return 0;
+
+    leaf = load_page(leaf_offset);
+
+    if (leaf == NULL) return 0;
+    for (i = 0; i < leaf->num_of_keys; i++)
+        if (leaf->records[i].key == key) break;
+    if (i == leaf->num_of_keys) {
+        free(leaf);
+        return 0;
+    }
+    free(leaf);
+    return leaf_offset;
+}
+
+
+// Mater functions
 
 char * db_find(int64_t key) {
     int i;
@@ -853,12 +1045,16 @@ int db_insert(int64_t key, char * value) {
     record new_rec;
     page * leaf;
     off_t leaf_offset;
+    char * record_value;
 
     /* The current implementation ignores
      * duplicates.
      */
-    if (db_find(key) != NULL)
+    record_value = db_find(key);
+    if (record_value != NULL) {
+        free(record_value);
         return -1;
+    }
 
     new_rec.key = key;
     memcpy(new_rec.value, value, 120 * sizeof(char));
@@ -892,7 +1088,7 @@ int db_insert(int64_t key, char * value) {
         insert_into_leaf_using_key_rotation(leaf, leaf_offset, new_rec);
     }
 
-    /* Case:  leaf must be split.
+    /* Case: leaf must be split.
      */
     else {
         insert_into_leaf_after_splitting(leaf, leaf_offset, new_rec);
@@ -905,13 +1101,17 @@ int db_insert(int64_t key, char * value) {
 
 
 int db_delete(int64_t key) {
+    
+    page * leaf;
+    off_t leaf_offset;
 
+    leaf_offset = find_leaf_if_value_exists(key);
+    if (leaf_offset == 0)
+        return -1;
+
+    leaf = load_page(leaf_offset);
+    delete_entry(leaf, leaf_offset, key);
+    
+    return 0;
 }//fin
-
-
-
-
-
-
-
 

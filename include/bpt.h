@@ -66,7 +66,6 @@ void start_new_file(record rec);
 off_t find_leaf(int key);
 
 // Insertion Utility Functions
-record * make_record(int64_t key, char * value);
 int get_left_index(off_t parent_offest, off_t left_offset);
 void insert_into_leaf(page * leaf, off_t leaf_offset, record new_record);
 void insert_into_leaf_after_splitting(page * leaf, off_t leaf_offset, record new_record);
@@ -82,9 +81,22 @@ void insert_into_node_after_splitting(page * old_node, off_t old_node_offset, in
 
 void insert_into_parent(page * left, off_t left_offset, int64_t key, page * right, off_t right_offset);
 void insert_into_new_root(page * left, off_t left_offset, int64_t key, page * right, off_t right_offset);
+
 // Deletion Utility Functions
+int get_neighbor_index(page * node, off_t node_offset);
+void remove_entry_from_node(page * node, int64_t key);
 
+void adjust_root(page * root, off_t root_offset)
+void coalesce_nodes(page * node, off_t node_offset, page * neighbor, off_t neighbor_offset,
+        int neighbor_index, int64_t k_prime);
+void redistribute_nodes(page * node, off_t node_offset, page * neighbor, off_t neighbor_offset,
+        int neighbor_index, int k_prime_index, int k_prime);
 
+void delete_entry(page * node, off_t node_offset, int64_t key);
+
+off_t find_leaf_if_value_exists(int64_t key);
+
+// Master Functions
 char * db_find(int64_t key);
 int db_insert(int64_t key, char * value);
 int db_delete(int64_t key);
