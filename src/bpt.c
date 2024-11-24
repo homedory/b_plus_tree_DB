@@ -6,8 +6,8 @@ page * rt = NULL; //root is declared as global
 
 int fd = -1; //fd is declared as global
 
-const leaf_order = 32;
-const internal_order = 249;
+const int leaf_order = 32;
+const int internal_order = 249;
 
 const record_value_size = 120;
 
@@ -752,7 +752,7 @@ void coalesce_nodes(page * node, off_t node_offset, page * neighbor, off_t neigh
      * Append all pointers and keys from the neighbor.
      */
 
-    if (!n->is_leaf) {
+    if (!node->is_leaf) {
 
         /* Append k_prime.
          */
