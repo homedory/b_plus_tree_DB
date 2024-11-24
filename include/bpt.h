@@ -86,7 +86,7 @@ void insert_into_new_root(page * left, off_t left_offset, int64_t key, page * ri
 int get_neighbor_index(page * node, off_t node_offset);
 void remove_entry_from_node(page * node, int64_t key);
 
-void adjust_root(page * root, off_t root_offset)
+void adjust_root(page * root, off_t root_offset);
 void coalesce_nodes(page * node, off_t node_offset, page * neighbor, off_t neighbor_offset,
         int neighbor_index, int64_t k_prime);
 void redistribute_nodes(page * node, off_t node_offset, page * neighbor, off_t neighbor_offset,
