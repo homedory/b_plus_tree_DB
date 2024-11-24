@@ -63,7 +63,7 @@ int parser();
 void start_new_file(record rec);
 
 // Find Utitlity Function
-off_t find_leaf(int key);
+off_t find_leaf(int64_t key);
 
 // Insertion Utility Functions
 int get_child_index_in_parent(off_t parent_offest, off_t child_offset);
