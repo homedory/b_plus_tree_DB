@@ -66,7 +66,7 @@ void start_new_file(record rec);
 off_t find_leaf(int key);
 
 // Insertion Utility Functions
-int get_left_index(off_t parent_offest, off_t left_offset);
+int get_child_index_in_parent(off_t parent_offest, off_t child_offset);
 void insert_into_leaf(page * leaf, off_t leaf_offset, record new_record);
 void insert_into_leaf_after_splitting(page * leaf, off_t leaf_offset, record new_record);
 

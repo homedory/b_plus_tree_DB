@@ -180,11 +180,14 @@ off_t find_leaf(int64_t key) {
     next_offset = hp->rpo;
     while (!c->is_leaf) {
         i = 0;
-        while (i < c->num_of_keys) {
-            if (key >= c->b_f[i].key) i++;
-            else break;
-        }
-        next_offset = c->b_f[i].p_offset;
+        while (i < c->num_of_keys && key > c->b_f[i].key) 
+            i++;
+        
+        // If i == 0, next_offset is the leftmost in the node.
+        if (i == 0)
+            next_offset = c->next_offset;
+        else
+            next_offset = c->b_f[i - 1].p_offset;
         free(c);
         c = load_page(next_offset);
     }
@@ -201,21 +204,21 @@ off_t find_leaf(int64_t key) {
  * to find the index in the parent's branch_factors array
  * corresponding to the node immediately to the left of the key to be inserted.
 */
-int get_left_index(off_t parent_offest, off_t left_offset) {
-    int left_index = 0;
-    page * parent = load_page(parent_offest);    
-    while (left_index < parent->num_of_keys &&
-            parent->b_f[left_index].p_offset != left_offset)
-        left_index++;
+int get_child_index_in_parent(off_t parent_offset, off_t child_offset) {
+    int child_index = 0;
+    page * parent = load_page(parent_offset);    
+    while (child_index < parent->num_of_keys &&
+            parent->b_f[child_index].p_offset != child_offset)
+        child_index++;
     
     // case: left_offset is in leftmost
-    if (parent->next_offset == left_offset) {
+    if (parent->next_offset == child_offset) {
         free(parent);
         return internal_order - 1;
     }
     
     free(parent);
-    return left_index;
+    return child_index;
 }
 
 /* Inserts a new record 
@@ -253,6 +256,7 @@ void insert_into_leaf_after_splitting(page * leaf, off_t leaf_offset, record new
 
     new_leaf_offset = new_page();
 
+    // Find the position to insert the new record.
     insertion_index = 0;
     while(insertion_index < leaf_order - 1 && leaf->records[insertion_index].key < new_record.key)
         insertion_index++;
@@ -267,8 +271,8 @@ void insert_into_leaf_after_splitting(page * leaf, off_t leaf_offset, record new
     leaf->num_of_keys = 0;
     new_leaf->num_of_keys = 0;
 
+    // Split the records between the original and new leaves.
     split = cut(leaf_order - 1);
-
     for (i = 0; i < split; i++) {
         leaf->records[i] = temp_records[i];
         leaf->num_of_keys++;
@@ -290,8 +294,10 @@ void insert_into_leaf_after_splitting(page * leaf, off_t leaf_offset, record new
     new_key = new_leaf->records[0].key;
 
     insert_into_parent(leaf, leaf_offset, new_key, new_leaf, new_leaf_offset);
+    
     pwrite(fd, new_leaf, sizeof(page), new_leaf_offset);
     free(new_leaf);
+    // The caller function, db_insert, will handle the disk write for the leaf node
 }
 
 /* Inserts a new record
@@ -335,6 +341,7 @@ void insert_into_leaf_using_key_rotation(page * leaf, off_t leaf_offset, record 
     insert_into_leaf(next_leaf, next_leaf_offset, rightmost_record);
     pwrite(fd, next_leaf, sizeof(page), next_leaf_offset);
     free(next_leaf);
+    // The caller function, db_insert, will handle the disk write for the leaf node
 }
 
 /* Check if there is a room
@@ -378,6 +385,12 @@ void update_key_for_key_rotation(page * leaf, off_t leaf_offset, int64_t key) {
     for (i = 0; i < upper->num_of_keys; i++) 
         if (upper->b_f[i].p_offset == lower_offset) break;
     
+    if (i == upper->num_of_keys) {
+        perror("Failed to find matching branching factor in parent");
+        free(upper);
+        return;
+    }
+
     // change key
     upper->b_f[i].key = key;
     pwrite(fd, upper, sizeof(page), upper_offset);
@@ -524,7 +537,7 @@ void insert_into_parent(page * left, off_t left_offset, int64_t key, page * righ
      * node.
      */
 
-    left_index = get_left_index(parent_offset, left_offset);
+    left_index = get_child_index_in_parent(parent_offset, left_offset);
 
     /* Simple case: the new key fits into the node. 
      */
@@ -566,7 +579,10 @@ void insert_into_new_root(page * left, off_t left_offset, int64_t key, page * ri
     root->b_f[0].key = key;
     root->b_f[0].p_offset = right_offset;
 
-    free(rt);
+    // Free the old root page if it exists.
+    if (rt) {
+        free(rt);
+    }
     rt = root;
     pwrite(fd, root, sizeof(page), root_offset);
 
@@ -623,15 +639,27 @@ void remove_entry_from_node(page * node, int64_t key) {
 
     if (node->is_leaf) {
         i = 0;
-        while (node->records[i].key != key)
+        while (i < node->num_of_keys && node->records[i].key != key)
             i++;
+        
+        if (i == node->num_of_keys) {
+            fprintf(stderr, "remove_entry_from_node: Key not found in leaf node.\n");
+            return;
+        }
+
         for (++i; i < node->num_of_keys; i++) 
             node->records[i - 1] = node->records[i];
     }
     else {
         i = 0;
-        while (node->b_f[i].key != key)
+        while (i < node->num_of_keys && node->b_f[i].key != key)
             i++;
+        
+        if (i == node->num_of_keys) {
+            fprintf(stderr, "remove_entry_from_node: Key not found in internal node.\n");
+            return;
+        }
+
         for (++i; i < node->num_of_keys; i++) 
             node->b_f[i - 1] = node->b_f[i];
     }
@@ -873,8 +901,8 @@ void redistribute_nodes(page * node, off_t node_offset, page * neighbor, off_t n
      * the neighbor has one fewer of each.
      */
 
-    n->num_keys++;
-    neighbor->num_keys--;
+    node->num_of_keys++;
+    neighbor->num_of_keys--;
 
     pwrite(fd, node, sizeof(page), node_offset);
     free(node);
@@ -1035,8 +1063,8 @@ char * db_find(int64_t key) {
         return NULL;
     }
 
-    value = calloc(120, sizeof(char));
-    memcpy(value, leaf->records[i].value, 120 * sizeof(char));
+    value = calloc(record_value_size, sizeof(char));
+    memcpy(value, leaf->records[i].value, record_value_size * sizeof(char));
     free(leaf);
     return value;
 }
@@ -1057,7 +1085,7 @@ int db_insert(int64_t key, char * value) {
     }
 
     new_rec.key = key;
-    memcpy(new_rec.value, value, 120 * sizeof(char));
+    memcpy(new_rec.value, value, record_value_size * sizeof(char));
 
     /* Case: the tree does not exist yet.
      * Start a new tree.
@@ -1078,7 +1106,7 @@ int db_insert(int64_t key, char * value) {
     /* Case: leaf has room for record.
      */
 
-    if (leaf->num_keys < leaf_order - 1) {
+    if (leaf->num_of_keys < leaf_order - 1) {
         insert_into_leaf(leaf, leaf_offset, new_rec);
     }
 
