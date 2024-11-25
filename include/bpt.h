@@ -101,6 +101,8 @@ char * db_find(int64_t key);
 int db_insert(int64_t key, char * value);
 int db_delete(int64_t key);
 
+void print_bpt();
+
 #endif /* __BPT_H__*/
 
 

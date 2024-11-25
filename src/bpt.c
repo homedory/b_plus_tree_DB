@@ -9,7 +9,7 @@ int fd = -1; //fd is declared as global
 const int leaf_order = 32;
 const int internal_order = 249;
 
-const record_value_size = 120;
+const int record_value_size = 120;
 
 
 H_P * load_header(off_t off) {
@@ -94,7 +94,7 @@ void usetofree(off_t wbf) {
     pwrite(fd, utf, sizeof(page), wbf);
     free(utf);
     hp->fpo = wbf;
-    pwrite(fd, hp, sizeof(H_P), 0);
+    pwrite(fd, hp, sizeof(hp), 0);
     free(hp);
     hp = load_header(0);
     return;
@@ -161,6 +161,61 @@ void start_new_file(record rec) {
 }
 
 
+void print_bpt() {
+    if (hp->rpo == 0) {
+        printf("Tree is empty.\n");
+        return;
+    }
+    printf("B+ Tree keys:\n");
+    printf("hp->rpo = %ld\n", hp->rpo);
+    print_keys(hp->rpo, 0);
+}
+// B+ Tree의 키를 출력하는 함수
+void print_keys(off_t page_offset, int depth) {
+    // 노드를 로드
+    page *current_page = load_page(page_offset);
+    if(current_page==NULL){
+        printf("load page fail\n");
+        return;
+    }
+    // 들여쓰기(Depth) 출력
+    for (int i = 0; i < depth; i++) {
+        printf("  ");
+    }
+    // 현재 노드의 키 출력
+    printf("[");
+    if(!current_page->is_leaf) printf("offt: %ld ",current_page->next_offset);
+    for (int i = 0; i < current_page->num_of_keys; i++) {
+        if (current_page->is_leaf) {
+            printf("%" PRId64, current_page->records[i].key); // 리프 노드
+        } else {
+            printf("%" PRId64, current_page->b_f[i].key); // 내부 노드
+            printf(" offt: %ld ",current_page->b_f[i].p_offset);
+        }
+        if (i < current_page->num_of_keys - 1) {
+            printf(", ");
+        }
+    }
+    printf("]");
+    printf("  next offset: %ld, numofkeys: %d\n", current_page->next_offset, current_page->num_of_keys);
+    // 리프 노드인 경우 탐색 종료
+    if (current_page->is_leaf) {
+        free(current_page);
+        return;
+    }
+    off_t child_offset;
+     // 내부 노드 탐색: 첫 번째 자식부터 출력
+    // 1. 첫 번째 자식 (next_offset) 출력
+    if (current_page->next_offset != 0) {
+        print_keys(current_page->next_offset, depth + 1);
+    }
+    // 2. 나머지 자식 (b_f 배열에 저장된 포인터들) 출력
+    for (int i = 0; i < current_page->num_of_keys; i++) {
+        print_keys(current_page->b_f[i].p_offset, depth + 1);
+    }
+    free(current_page);
+}
+
 // Find Utitlity Function
 
 
@@ -180,7 +235,7 @@ off_t find_leaf(int64_t key) {
     next_offset = hp->rpo;
     while (!c->is_leaf) {
         i = 0;
-        while (i < c->num_of_keys && key > c->b_f[i].key) 
+        while (i < c->num_of_keys && key >= c->b_f[i].key) 
             i++;
         
         // If i == 0, next_offset is the leftmost in the node.
@@ -305,6 +360,9 @@ void insert_into_leaf_after_splitting(page * leaf, off_t leaf_offset, record new
  * the tree's order, causing key rotation.
  */
 void insert_into_leaf_using_key_rotation(page * leaf, off_t leaf_offset, record new_record) {
+    // for_test
+    printf("key rotation executed!!!!!!!!!!!\n");
+
     page * next_leaf;
     off_t next_leaf_offset;
     record * temp_records;
@@ -386,6 +444,17 @@ void update_key_for_key_rotation(page * leaf, off_t leaf_offset, int64_t key) {
         if (upper->b_f[i].p_offset == lower_offset) break;
     
     if (i == upper->num_of_keys) {
+        // for_test
+        printf("Failed to find matching branching factor in parent\n");
+        // for_test
+        printf("------------------------upper status------------------------\n");
+        printf("num of keys %d\n", upper->num_of_keys);
+        printf("%ld ", upper->next_offset);
+        for (int x = 0; x < upper->num_of_keys; x++) {
+            printf("||- %ld -|| %ld ", upper->b_f[x].key, upper->b_f[x].p_offset);
+        }
+        printf("\n--------------------------------------------------------------\n");
+    
         perror("Failed to find matching branching factor in parent");
         free(upper);
         return;
@@ -406,7 +475,9 @@ void insert_into_node(page * parent, off_t parent_offset,
         int left_index, int64_t key, page * right, off_t right_offset) {
     int i;
 
-    for (i = parent->num_of_keys; i > left_index; i--) {
+    int left_bound = left_index == internal_order - 1 ? 0 : left_index;
+
+    for (i = parent->num_of_keys; i > left_bound; i--) {
         memcpy(&(parent->b_f[i]), &(parent->b_f[i - 1]), sizeof(I_R));
     }
     // case: left page is in leftmost
@@ -568,6 +639,8 @@ void insert_into_new_root(page * left, off_t left_offset, int64_t key, page * ri
     off_t root_offset = new_page();
     page * root = load_page(root_offset);
 
+    // for_test
+    // printf("Insert_into_new_root starts, new_root %ld---------------------------------------\n", root_offset);
     // save change in header page
     hp->rpo = root_offset;
     pwrite(fd, hp, sizeof(H_P), 0);
@@ -583,12 +656,21 @@ void insert_into_new_root(page * left, off_t left_offset, int64_t key, page * ri
     if (rt) {
         free(rt);
     }
-    rt = root;
+    rt = root;  
     pwrite(fd, root, sizeof(page), root_offset);
 
     left->parent_page_offset = root_offset;
 
     right->parent_page_offset = root_offset;
+
+    // for_test
+    // root = load_page(root_offset);
+    // printf("%ld ", root->next_offset);
+    // for (int x = 0; x < root->num_of_keys; x++) {
+    //     printf("||- %ld -|| %ld ", root->b_f[x].key, root->b_f[x].p_offset);
+    // }
+    // printf("\n");
+    // free(root);
 }
 
 // Deletion Utility Functions
@@ -623,8 +705,11 @@ int get_neighbor_index(page * node, off_t node_offset) {
     if (i == 0)
         i = internal_order;
     // case: node is leftmost node which means there is no left sibling, return value is -1
-    else if (node_offset == parent->next_offset)
+    else if (node_offset == parent->next_offset) {
+        // for_test
+        printf("------------------------------neightbor index -1---------------------------\n");
         i = 0;
+    }
     
     free(parent);
     return i - 1;
@@ -643,7 +728,7 @@ void remove_entry_from_node(page * node, int64_t key) {
             i++;
         
         if (i == node->num_of_keys) {
-            fprintf(stderr, "remove_entry_from_node: Key not found in leaf node.\n");
+            perror("remove_entry_from_node: Key not found in leaf node.\n");
             return;
         }
 
@@ -656,7 +741,7 @@ void remove_entry_from_node(page * node, int64_t key) {
             i++;
         
         if (i == node->num_of_keys) {
-            fprintf(stderr, "remove_entry_from_node: Key not found in internal node.\n");
+            perror("remove_entry_from_node: Key not found in internal node.\n");
             return;
         }
 
@@ -665,6 +750,15 @@ void remove_entry_from_node(page * node, int64_t key) {
     }
 
     node->num_of_keys--;
+    // for_test
+    if (key == 603) {
+        printf("------------------------leaf status (remove entry from node)------------------------\n");
+        printf("num of keys %d\n", node->num_of_keys);
+        for (int x = 0; x < node->num_of_keys; x++) {
+            printf("|| %ld ", node->records[x].key);
+        }
+        printf("\n--------------------------------------------------------------\n");
+    }
 }
 
 void adjust_root(page * root, off_t root_offset) {
@@ -804,10 +898,12 @@ void coalesce_nodes(page * node, off_t node_offset, page * neighbor, off_t neigh
     free(node);
     usetofree(node_offset);
 
+    pwrite(fd, neighbor, sizeof(page), neighbor_offset);
+    free(neighbor);
+
     // delete k_prime and deleted node's entry from parent
     delete_entry(parent, parent_offset, k_prime);
 
-    // The caller function, delete_entry, will handle the disk write for the neighbor node
     // The callee function, delete_entry, will handle the disk write for the parent node
 }
 
@@ -890,7 +986,11 @@ void redistribute_nodes(page * node, off_t node_offset, page * neighbor, off_t n
                 neighbor->records[i] = neighbor->records[i + 1];
             }
 
-            parent->b_f[k_prime_index].key = node->records[node->num_of_keys].key;  
+            parent->b_f[k_prime_index].key = neighbor->records[0].key;  
+            
+            // for_test
+            printf("restribute nodes in leaf with neighbor index -1\n k_prime_index %d new key: %ld\n",
+            k_prime_index, neighbor->records[0].key);
         }
     }
 
@@ -907,7 +1007,8 @@ void redistribute_nodes(page * node, off_t node_offset, page * neighbor, off_t n
     pwrite(fd, node, sizeof(page), node_offset);
     free(node);
 
-    // The caller function, delete_entry, will handle the disk write for the neighbor node
+    pwrite(fd, neighbor, sizeof(page), neighbor_offset);
+    free(neighbor);
 }
 
 
@@ -952,8 +1053,11 @@ void delete_entry(page * node, off_t node_offset, int64_t key) {
      * (The simple case.)
      */
 
-    if (node->num_of_keys >= min_keys)
+    if (node->num_of_keys >= min_keys) {
+        pwrite(fd, node, sizeof(page), node_offset);
+        free(node);
         return;
+    }
 
     /* Case:  node falls below minimum.
      * Either coalescence or redistribution
@@ -973,12 +1077,16 @@ void delete_entry(page * node, off_t node_offset, int64_t key) {
     // get left sibling node index in parent, if -1 it means there is no left sibling node
     neighbor_index = get_neighbor_index(node, node_offset);
 
-    if (neighbor_index == -1 || neighbor_index == internal_order - 1) {
+    if (neighbor_index == -1) {
         k_prime_index = 0;
         neighbor_offset = parent->b_f[0].p_offset;
     }
+    else if (neighbor_index == internal_order - 1) {
+        k_prime_index = 0;
+        neighbor_offset = parent->next_offset;
+    }
     else {
-        k_prime_index = neighbor_index;
+        k_prime_index = neighbor_index + 1;
         neighbor_offset = parent->b_f[neighbor_index].p_offset;
     }
     k_prime = parent->b_f[k_prime_index].key;
@@ -990,16 +1098,14 @@ void delete_entry(page * node, off_t node_offset, int64_t key) {
     free(parent);
     /* Coalescence. */
 
-    if (neighbor->num_of_keys + node->num_of_keys < capacity)
+    if (neighbor->num_of_keys + node->num_of_keys < capacity) 
         coalesce_nodes(node, node_offset, neighbor, neighbor_offset, neighbor_index, k_prime);
 
     /* Redistribution. */
 
-    else
+    else 
         redistribute_nodes(node, node_offset, neighbor, neighbor_offset, neighbor_index, k_prime_index, k_prime);
     
-    pwrite(fd, neighbor, sizeof(page), neighbor_offset);
-    free(neighbor);
     /* The callee function (delete_entry, coalesce_nodes, redistrubute_nodes) 
      * handled the disk write or free page for the node
      */
