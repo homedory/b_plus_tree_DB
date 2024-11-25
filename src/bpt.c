@@ -364,7 +364,7 @@ void insert_into_leaf_after_splitting(page * leaf, off_t leaf_offset, record new
  */
 void insert_into_leaf_using_key_rotation(page * leaf, off_t leaf_offset, record new_record) {
     // for_test
-    printf("key rotation executed!!!!!!!!!!!\n");
+    // printf("key rotation executed!!!!!!!!!!!\n");
 
     page * next_leaf;
     off_t next_leaf_offset;
@@ -578,6 +578,11 @@ void insert_into_node_after_splitting(page * old_node, off_t old_node_offset, in
 
     free(temp_b_fs);
 
+    child_offset = new_node->next_offset;
+    child = load_page(child_offset);
+    child->parent_page_offset = new_node_offset;
+    pwrite(fd, child, sizeof(page), child_offset);
+    free(child);
     for (i = 0; i < new_node->num_of_keys; i++) {
         child_offset = new_node->b_f[i].p_offset;
         child = load_page(child_offset);
@@ -657,7 +662,7 @@ void insert_into_parent(page * left, off_t left_offset, int64_t key, page * righ
         free(left);
         insert_into_node_after_splitting(parent, parent_offset, left_index, key, right, right_offset);
         return;
-        // prent node will be written on disk when it stops 
+        // parent node will be written on disk when it stops 
     }
     
     pwrite(fd, right, sizeof(page), right_offset);
@@ -741,7 +746,7 @@ int get_neighbor_index(page * node, off_t node_offset) {
     // case: node is leftmost node which means there is no left sibling, return value is -1
     else if (node_offset == parent->next_offset) {
         // for_test
-        printf("------------------------------neightbor index -1---------------------------\n");
+        // printf("------------------------------neightbor index -1---------------------------\n");
         i = 0;
     }
     
@@ -1014,8 +1019,8 @@ void redistribute_nodes(page * node, off_t node_offset, page * neighbor, off_t n
             parent->b_f[k_prime_index].key = neighbor->records[0].key;  
             
             // for_test
-            printf("restribute nodes in leaf with neighbor index -1\n k_prime_index %d new key: %ld\n",
-            k_prime_index, neighbor->records[0].key);
+            // printf("restribute nodes in leaf with neighbor index -1\n k_prime_index %d new key: %ld\n",
+            // k_prime_index, neighbor->records[0].key);
         }
     }
 

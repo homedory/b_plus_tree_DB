@@ -7,16 +7,13 @@ int main(){
     char *result;
     open_table("test.db");
     int input_line = 1;
-    bool running = true;
-    while(scanf("%c", &instruction) != EOF && running){
-        printf("\n%d \n", input_line);
+    while(scanf("%c", &instruction) != EOF){
+        // printf("\n%d \n", input_line);
         switch(instruction){
             case 'i':
                 scanf("%ld %s", &input, buf);
-                if(db_insert(input, buf) != 0) {
+                if(db_insert(input, buf) != 0)
                     printf("Insertion Failed!!!!!!!!\n\n");
-                    running = false;
-                }
                 else 
                     // printf("Insertion Success: key %ld, value %s\n\n", input, buf);
                 break;
@@ -34,10 +31,8 @@ int main(){
                 break;
             case 'd':
                 scanf("%ld", &input);
-                if (db_delete(input) != 0) {
-                    printf("----------------------------Deletion Failed-----------------------------\n");
-                    running = false;
-                }
+                if (db_delete(input) != 0) 
+                    printf("Deletion Failed\n");
                 break;
             case 'q':
                 while (getchar() != (int)'\n');
@@ -45,20 +40,20 @@ int main(){
                 break;
         }
         // print_bpt();
-        print_bpt();
-        if (input_line >= 13386) {
-            page* temp = load_page(131072);
-            if (temp->parent_page_offset != 12288) {
-                printf("131072 parent are different !!!!!!!!!!!!!!!!!!\n");
-            }
-            printf("131072 parent offset is %ld\n", temp->parent_page_offset);
-            free(temp);
-        }
-        if (input_line == 15855) {
-            page* temp = load_page(131072);
-            printf("131072 parent offset is %ld\n", temp->parent_page_offset);
-            free(temp);
-        }
+        // print_bpt();
+        // if (input_line >= 13386) {
+        //     page* temp = load_page(131072);
+        //     if (temp->parent_page_offset != 12288) {
+        //         printf("131072 parent are different !!!!!!!!!!!!!!!!!!\n");
+        //     }
+        //     printf("131072 parent offset is %ld\n", temp->parent_page_offset);
+        //     free(temp);
+        // }
+        // if (input_line == 15855) {
+        //     page* temp = load_page(131072);
+        //     printf("131072 parent offset is %ld\n", temp->parent_page_offset);
+        //     free(temp);
+        // }
 
         input_line++;
         while (getchar() != (int)'\n');

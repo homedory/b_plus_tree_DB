@@ -37,7 +37,7 @@ void generate_test_case_file(const char *filename, int num_cases) {
             }
         } else {
             // Generate a random unique key for insertion
-            int key = rand() % 100000 + 1;
+            int key = rand() % 300000 + 1;
             bool key_exists = false;
 
             for (int j = 0; j < key_count; j++) {
@@ -74,8 +74,8 @@ void generate_test_case_file(const char *filename, int num_cases) {
 }
 
 int main() {
-    const char *filename = "testcase_with_deletion5.txt";
-    int num_cases = 50000;
+    const char *filename = "testcase7.txt";
+    int num_cases = 150000;
 
     generate_test_case_file(filename, num_cases);
 
