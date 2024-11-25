@@ -292,6 +292,9 @@ void insert_into_leaf(page * leaf, off_t leaf_offset, record new_record) {
     
     leaf->records[insertion_point] = new_record;
     leaf->num_of_keys++;
+    
+    pwrite(fd, leaf, sizeof(page), leaf_offset);
+    free(leaf);
 }
 
 /* Inserts a new record
@@ -350,8 +353,8 @@ void insert_into_leaf_after_splitting(page * leaf, off_t leaf_offset, record new
 
     insert_into_parent(leaf, leaf_offset, new_key, new_leaf, new_leaf_offset);
     
-    pwrite(fd, new_leaf, sizeof(page), new_leaf_offset);
-    free(new_leaf);
+    // pwrite(fd, new_leaf, sizeof(page), new_leaf_offset);
+    // free(new_leaf);
     // The caller function, db_insert, will handle the disk write for the leaf node
 }
 
@@ -397,9 +400,10 @@ void insert_into_leaf_using_key_rotation(page * leaf, off_t leaf_offset, record 
 
     // insert rightmost record into next leaf node
     insert_into_leaf(next_leaf, next_leaf_offset, rightmost_record);
-    pwrite(fd, next_leaf, sizeof(page), next_leaf_offset);
-    free(next_leaf);
-    // The caller function, db_insert, will handle the disk write for the leaf node
+    // pwrite(fd, next_leaf, sizeof(page), next_leaf_offset);
+    // free(next_leaf);
+    pwrite(fd, leaf, sizeof(page), leaf_offset);
+    free(leaf);
 }
 
 /* Check if there is a room
@@ -427,6 +431,14 @@ void update_key_for_key_rotation(page * leaf, off_t leaf_offset, int64_t key) {
     off_t upper_offset, lower_offset;
     int i;
 
+    // for_test
+    if (leaf->parent_page_offset == 0) {
+        printf("Failed Leaf parent page offset 0\n");
+    }
+    else if (leaf->parent_page_offset == leaf_offset) {
+        printf("Failed Leaf parent page offset is same with leaf_offset\n");
+    }
+
     upper_offset = leaf->parent_page_offset;
     upper = load_page(upper_offset);
     lower_offset = leaf_offset;
@@ -443,6 +455,12 @@ void update_key_for_key_rotation(page * leaf, off_t leaf_offset, int64_t key) {
     for (i = 0; i < upper->num_of_keys; i++) 
         if (upper->b_f[i].p_offset == lower_offset) break;
     
+    // if (upper->next_offset == lower_offset) {
+    //     // change key
+    //     upper->b_f[0].key = key;
+    //     pwrite(fd, upper, sizeof(page), upper_offset);
+    //     free(upper);        
+    // }
     if (i == upper->num_of_keys) {
         // for_test
         printf("Failed to find matching branching factor in parent\n");
@@ -574,11 +592,14 @@ void insert_into_node_after_splitting(page * old_node, off_t old_node_offset, in
     // right node is a child of new_node
     else
         right->parent_page_offset = new_node_offset;
+
+    pwrite(fd, right, sizeof(page), right_offset);
+    free(right);
     
     insert_into_parent(old_node, old_node_offset, k_prime, new_node, new_node_offset);
 
-    pwrite(fd, new_node, sizeof(page), new_node_offset);
-    free(new_node);
+    // pwrite(fd, new_node, sizeof(page), new_node_offset);
+    // free(new_node);
 }  
  
  
@@ -595,6 +616,10 @@ void insert_into_parent(page * left, off_t left_offset, int64_t key, page * righ
 
     if (parent_offset == 0) {
         insert_into_new_root(left, left_offset, key, right, right_offset);
+        pwrite(fd, left, sizeof(page), left_offset);
+        free(left);
+        pwrite(fd, right, sizeof(page), right_offset);
+        free(right);
         return;
     }
 
@@ -615,8 +640,12 @@ void insert_into_parent(page * left, off_t left_offset, int64_t key, page * righ
 
     left->parent_page_offset = parent_offset;
 
-    if (parent->num_of_keys < internal_order - 1) {    
+    if (parent->num_of_keys < internal_order - 1) {   
+        pwrite(fd, left, sizeof(page), left_offset);
+        free(left); 
         insert_into_node(parent, parent_offset, left_index, key, right, right_offset);
+        pwrite(fd, parent, sizeof(page), parent_offset);
+        free(parent);
     }
 
     /* Harder case:  split a node in order 
@@ -624,10 +653,15 @@ void insert_into_parent(page * left, off_t left_offset, int64_t key, page * righ
      */
     
     else {
+        pwrite(fd, left, sizeof(page), left_offset);
+        free(left);
         insert_into_node_after_splitting(parent, parent_offset, left_index, key, right, right_offset);
+        return;
+        // prent node will be written on disk when it stops 
     }
-    pwrite(fd, parent, sizeof(page), parent_offset);
-    free(parent);
+    
+    pwrite(fd, right, sizeof(page), right_offset);
+    free(right);
 }
 
 
@@ -750,15 +784,6 @@ void remove_entry_from_node(page * node, int64_t key) {
     }
 
     node->num_of_keys--;
-    // for_test
-    if (key == 603) {
-        printf("------------------------leaf status (remove entry from node)------------------------\n");
-        printf("num of keys %d\n", node->num_of_keys);
-        for (int x = 0; x < node->num_of_keys; x++) {
-            printf("|| %ld ", node->records[x].key);
-        }
-        printf("\n--------------------------------------------------------------\n");
-    }
 }
 
 void adjust_root(page * root, off_t root_offset) {
@@ -1228,8 +1253,8 @@ int db_insert(int64_t key, char * value) {
         insert_into_leaf_after_splitting(leaf, leaf_offset, new_rec);
     }
 
-    pwrite(fd, leaf, sizeof(page), leaf_offset);
-    free(leaf);
+    // pwrite(fd, leaf, sizeof(page), leaf_offset);
+    // free(leaf);
     return 0;
 }
 
