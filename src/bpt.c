@@ -1,5 +1,7 @@
 #include "bpt.h"
 
+#define KEY_ROTATION
+
 H_P * hp;
 
 page * rt = NULL; //root is declared as global
@@ -94,7 +96,7 @@ void usetofree(off_t wbf) {
     pwrite(fd, utf, sizeof(page), wbf);
     free(utf);
     hp->fpo = wbf;
-    pwrite(fd, hp, sizeof(hp), 0);
+    pwrite(fd, hp, sizeof(H_P), 0);
     free(hp);
     hp = load_header(0);
     return;
@@ -161,61 +163,6 @@ void start_new_file(record rec) {
 }
 
 
-void print_bpt() {
-    if (hp->rpo == 0) {
-        printf("Tree is empty.\n");
-        return;
-    }
-    printf("B+ Tree keys:\n");
-    printf("hp->rpo = %ld\n", hp->rpo);
-    print_keys(hp->rpo, 0);
-}
-// B+ Tree의 키를 출력하는 함수
-void print_keys(off_t page_offset, int depth) {
-    // 노드를 로드
-    page *current_page = load_page(page_offset);
-    if(current_page==NULL){
-        printf("load page fail\n");
-        return;
-    }
-    // 들여쓰기(Depth) 출력
-    for (int i = 0; i < depth; i++) {
-        printf("  ");
-    }
-    // 현재 노드의 키 출력
-    printf("[");
-    if(!current_page->is_leaf) printf("offt: %ld ",current_page->next_offset);
-    for (int i = 0; i < current_page->num_of_keys; i++) {
-        if (current_page->is_leaf) {
-            printf("%" PRId64, current_page->records[i].key); // 리프 노드
-        } else {
-            printf("%" PRId64, current_page->b_f[i].key); // 내부 노드
-            printf(" offt: %ld ",current_page->b_f[i].p_offset);
-        }
-        if (i < current_page->num_of_keys - 1) {
-            printf(", ");
-        }
-    }
-    printf("]");
-    printf("  next offset: %ld, numofkeys: %d\n", current_page->next_offset, current_page->num_of_keys);
-    // 리프 노드인 경우 탐색 종료
-    if (current_page->is_leaf) {
-        free(current_page);
-        return;
-    }
-    off_t child_offset;
-     // 내부 노드 탐색: 첫 번째 자식부터 출력
-    // 1. 첫 번째 자식 (next_offset) 출력
-    if (current_page->next_offset != 0) {
-        print_keys(current_page->next_offset, depth + 1);
-    }
-    // 2. 나머지 자식 (b_f 배열에 저장된 포인터들) 출력
-    for (int i = 0; i < current_page->num_of_keys; i++) {
-        print_keys(current_page->b_f[i].p_offset, depth + 1);
-    }
-    free(current_page);
-}
-
 // Find Utitlity Function
 
 
@@ -227,7 +174,7 @@ off_t find_leaf(int64_t key) {
     int i = 0;
 
     // tree does not exist yet, return header page offset
-    if (hp->num_of_pages == 1) {
+    if (hp->rpo == 0) {
         return 0;
     }
     page * c = load_page(hp->rpo); // start from root page
@@ -352,10 +299,6 @@ void insert_into_leaf_after_splitting(page * leaf, off_t leaf_offset, record new
     new_key = new_leaf->records[0].key;
 
     insert_into_parent(leaf, leaf_offset, new_key, new_leaf, new_leaf_offset);
-    
-    // pwrite(fd, new_leaf, sizeof(page), new_leaf_offset);
-    // free(new_leaf);
-    // The caller function, db_insert, will handle the disk write for the leaf node
 }
 
 /* Inserts a new record
@@ -363,9 +306,6 @@ void insert_into_leaf_after_splitting(page * leaf, off_t leaf_offset, record new
  * the tree's order, causing key rotation.
  */
 void insert_into_leaf_using_key_rotation(page * leaf, off_t leaf_offset, record new_record) {
-    // for_test
-    // printf("key rotation executed!!!!!!!!!!!\n");
-
     page * next_leaf;
     off_t next_leaf_offset;
     record * temp_records;
@@ -400,8 +340,6 @@ void insert_into_leaf_using_key_rotation(page * leaf, off_t leaf_offset, record 
 
     // insert rightmost record into next leaf node
     insert_into_leaf(next_leaf, next_leaf_offset, rightmost_record);
-    // pwrite(fd, next_leaf, sizeof(page), next_leaf_offset);
-    // free(next_leaf);
     pwrite(fd, leaf, sizeof(page), leaf_offset);
     free(leaf);
 }
@@ -431,14 +369,6 @@ void update_key_for_key_rotation(page * leaf, off_t leaf_offset, int64_t key) {
     off_t upper_offset, lower_offset;
     int i;
 
-    // for_test
-    if (leaf->parent_page_offset == 0) {
-        printf("Failed Leaf parent page offset 0\n");
-    }
-    else if (leaf->parent_page_offset == leaf_offset) {
-        printf("Failed Leaf parent page offset is same with leaf_offset\n");
-    }
-
     upper_offset = leaf->parent_page_offset;
     upper = load_page(upper_offset);
     lower_offset = leaf_offset;
@@ -454,29 +384,6 @@ void update_key_for_key_rotation(page * leaf, off_t leaf_offset, int64_t key) {
     // find index of branching factor in upper node
     for (i = 0; i < upper->num_of_keys; i++) 
         if (upper->b_f[i].p_offset == lower_offset) break;
-    
-    // if (upper->next_offset == lower_offset) {
-    //     // change key
-    //     upper->b_f[0].key = key;
-    //     pwrite(fd, upper, sizeof(page), upper_offset);
-    //     free(upper);        
-    // }
-    if (i == upper->num_of_keys) {
-        // for_test
-        printf("Failed to find matching branching factor in parent\n");
-        // for_test
-        printf("------------------------upper status------------------------\n");
-        printf("num of keys %d\n", upper->num_of_keys);
-        printf("%ld ", upper->next_offset);
-        for (int x = 0; x < upper->num_of_keys; x++) {
-            printf("||- %ld -|| %ld ", upper->b_f[x].key, upper->b_f[x].p_offset);
-        }
-        printf("\n--------------------------------------------------------------\n");
-    
-        perror("Failed to find matching branching factor in parent");
-        free(upper);
-        return;
-    }
 
     // change key
     upper->b_f[i].key = key;
@@ -602,9 +509,6 @@ void insert_into_node_after_splitting(page * old_node, off_t old_node_offset, in
     free(right);
     
     insert_into_parent(old_node, old_node_offset, k_prime, new_node, new_node_offset);
-
-    // pwrite(fd, new_node, sizeof(page), new_node_offset);
-    // free(new_node);
 }  
  
  
@@ -678,8 +582,6 @@ void insert_into_new_root(page * left, off_t left_offset, int64_t key, page * ri
     off_t root_offset = new_page();
     page * root = load_page(root_offset);
 
-    // for_test
-    // printf("Insert_into_new_root starts, new_root %ld---------------------------------------\n", root_offset);
     // save change in header page
     hp->rpo = root_offset;
     pwrite(fd, hp, sizeof(H_P), 0);
@@ -701,15 +603,6 @@ void insert_into_new_root(page * left, off_t left_offset, int64_t key, page * ri
     left->parent_page_offset = root_offset;
 
     right->parent_page_offset = root_offset;
-
-    // for_test
-    // root = load_page(root_offset);
-    // printf("%ld ", root->next_offset);
-    // for (int x = 0; x < root->num_of_keys; x++) {
-    //     printf("||- %ld -|| %ld ", root->b_f[x].key, root->b_f[x].p_offset);
-    // }
-    // printf("\n");
-    // free(root);
 }
 
 // Deletion Utility Functions
@@ -744,11 +637,9 @@ int get_neighbor_index(page * node, off_t node_offset) {
     if (i == 0)
         i = internal_order;
     // case: node is leftmost node which means there is no left sibling, return value is -1
-    else if (node_offset == parent->next_offset) {
-        // for_test
-        // printf("------------------------------neightbor index -1---------------------------\n");
+    else if (node_offset == parent->next_offset) 
         i = 0;
-    }
+    
     
     free(parent);
     return i - 1;
@@ -831,6 +722,10 @@ void adjust_root(page * root, off_t root_offset) {
     // remove root page
     
     else {
+        hp->rpo = 0;
+        pwrite(fd, hp, sizeof(H_P), 0);
+        free(hp);
+        hp = load_header(0);
         free(root);
         usetofree(root_offset);
     }
@@ -1016,11 +911,7 @@ void redistribute_nodes(page * node, off_t node_offset, page * neighbor, off_t n
                 neighbor->records[i] = neighbor->records[i + 1];
             }
 
-            parent->b_f[k_prime_index].key = neighbor->records[0].key;  
-            
-            // for_test
-            // printf("restribute nodes in leaf with neighbor index -1\n k_prime_index %d new key: %ld\n",
-            // k_prime_index, neighbor->records[0].key);
+            parent->b_f[k_prime_index].key = neighbor->records[0].key;
         }
     }
 
@@ -1227,7 +1118,7 @@ int db_insert(int64_t key, char * value) {
      * Start a new tree.
      */
 
-    if (hp->num_of_pages == 1)  {
+    if (hp->rpo == 0)  {
         start_new_file(new_rec);
         return 0;
     }
@@ -1245,21 +1136,21 @@ int db_insert(int64_t key, char * value) {
     if (leaf->num_of_keys < leaf_order - 1) {
         insert_into_leaf(leaf, leaf_offset, new_rec);
     }
-
+    
+#ifdef KEY_ROTATION
     /* Case: right sibling leaf has room for record.
      */
     else if (has_room_for_record(leaf->next_offset)) {
         insert_into_leaf_using_key_rotation(leaf, leaf_offset, new_rec);
     }
+#endif
 
     /* Case: leaf must be split.
      */
     else {
         insert_into_leaf_after_splitting(leaf, leaf_offset, new_rec);
     }
-
-    // pwrite(fd, leaf, sizeof(page), leaf_offset);
-    // free(leaf);
+    
     return 0;
 }
 

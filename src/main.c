@@ -15,9 +15,7 @@ int main(){
     clock_gettime(CLOCK_MONOTONIC, &start_time);
 
     open_table("test.db");
-    int input_line = 1;
     while(scanf("%c", &instruction) != EOF){
-        // printf("\n%d \n", input_line);
         switch(instruction){
             case 'i':
                 scanf("%ld %s", &input, buf);
@@ -57,12 +55,6 @@ int main(){
                 return EXIT_SUCCESS;
                 break;
         }
-
-        if (input_line % 10000 == 0) {
-            printf("%d completed\n", input_line);
-        }
-
-        input_line++;
         while (getchar() != (int)'\n');
     }
 

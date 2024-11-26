@@ -59,7 +59,6 @@ void reset(off_t off);
 off_t new_page();
 void freetouse(off_t fpo);
 int cut(int length);
-int parser();
 void start_new_file(record rec);
 
 // Find Utitlity Function
@@ -101,7 +100,6 @@ char * db_find(int64_t key);
 int db_insert(int64_t key, char * value);
 int db_delete(int64_t key);
 
-void print_bpt();
 
 #endif /* __BPT_H__*/
 

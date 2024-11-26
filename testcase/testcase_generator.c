@@ -18,6 +18,11 @@ void generate_test_case_file(const char *filename, int num_cases) {
     srand((unsigned int)time(NULL)); // Seed the random number generator
 
     KeyState *key_states = malloc(num_cases * sizeof(KeyState)); // Track all key states
+    if (key_states == NULL) {
+        perror("Failed to allocate memory");
+        fclose(file);
+        exit(EXIT_FAILURE);
+    }
     int key_count = 0;
 
     for (int i = 0; i < num_cases; i++) {
@@ -74,11 +79,17 @@ void generate_test_case_file(const char *filename, int num_cases) {
 }
 
 int main() {
-    const char *filename = "testcase8.txt";
-    int num_cases = 500000;
+    int num_cases_array[] = {5000, 10000, 50000, 100000, 500000};
+    int num_test_cases = sizeof(num_cases_array) / sizeof(num_cases_array[0]);
 
-    generate_test_case_file(filename, num_cases);
+    for (int i = 0; i < num_test_cases; i++) {
+        char filename[50];
+        sprintf(filename, "testcase_%d.txt", num_cases_array[i]);
 
-    printf("Test case file '%s' generated with %d cases.\n", filename, num_cases);
+        printf("Generating test case file '%s' with %d cases...\n", filename, num_cases_array[i]);
+        generate_test_case_file(filename, num_cases_array[i]);
+    }
+
+    printf("All test case files generated successfully.\n");
     return 0;
 }
