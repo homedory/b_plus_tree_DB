@@ -1,10 +1,19 @@
 #include "bpt.h"
 
+#include <time.h>
+
 int main(){
     int64_t input;
     char instruction;
     char buf[120];
     char *result;
+
+    struct timespec start_time, end_time;
+    double execution_time;
+
+    // Start measuring time
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
+
     open_table("test.db");
     int input_line = 1;
     while(scanf("%c", &instruction) != EOF){
@@ -36,28 +45,36 @@ int main(){
                 break;
             case 'q':
                 while (getchar() != (int)'\n');
+
+                // Stop measuring time
+                clock_gettime(CLOCK_MONOTONIC, &end_time);
+                
+                // Calculate total execution time
+                execution_time = (end_time.tv_sec - start_time.tv_sec) +
+                                 (end_time.tv_nsec - start_time.tv_nsec) / 1e9;
+                printf("Total Execution Time: %.2f seconds\n", execution_time);
+
                 return EXIT_SUCCESS;
                 break;
         }
-        // print_bpt();
-        // print_bpt();
-        // if (input_line >= 13386) {
-        //     page* temp = load_page(131072);
-        //     if (temp->parent_page_offset != 12288) {
-        //         printf("131072 parent are different !!!!!!!!!!!!!!!!!!\n");
-        //     }
-        //     printf("131072 parent offset is %ld\n", temp->parent_page_offset);
-        //     free(temp);
-        // }
-        // if (input_line == 15855) {
-        //     page* temp = load_page(131072);
-        //     printf("131072 parent offset is %ld\n", temp->parent_page_offset);
-        //     free(temp);
-        // }
+
+        if (input_line % 10000 == 0) {
+            printf("%d completed\n", input_line);
+        }
 
         input_line++;
         while (getchar() != (int)'\n');
     }
+
+    // Stop measuring time
+    clock_gettime(CLOCK_MONOTONIC, &end_time);
+
+    // Calculate total execution time
+    execution_time = (end_time.tv_sec - start_time.tv_sec) +
+                     (end_time.tv_nsec - start_time.tv_nsec) / 1e9;
+    printf("Total Execution Time: %.2f seconds\n", execution_time);
+
+
     printf("\n");
     return 0;
 }
