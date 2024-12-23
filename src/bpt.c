@@ -2,11 +2,19 @@
 
 #define KEY_ROTATION
 
+int cur_table = 1;
+
 H_P * hp;
+H_P * hp1;
+H_P * hp2;
 
 page * rt = NULL; //root is declared as global
+page * rt1 = NULL;
+page * rt2 = NULL;
 
 int fd = -1; //fd is declared as global
+int fd1 = -1;
+int fd2 = -1;
 
 const int leaf_order = 32;
 const int internal_order = 249;
@@ -27,6 +35,15 @@ H_P * load_header(off_t off) {
 page * load_page(off_t off) {
     page* load = (page*)calloc(1, sizeof(page));
     //if (off % sizeof(page) != 0) printf("load fail : page offset error\n");
+    if (sizeof(page) > pread(fd, load, sizeof(page), off)) {
+
+        return NULL;
+    }
+    return load;
+}
+
+page * load_page_with_fd(int fd, off_t off) {
+    page* load = (page*)calloc(1, sizeof(page));
     if (sizeof(page) > pread(fd, load, sizeof(page), off)) {
 
         return NULL;
@@ -1063,6 +1080,33 @@ off_t find_leaf_if_value_exists(int64_t key) {
     return leaf_offset;
 }
 
+/* 
+*/
+void set_table_pointer(int num) {
+    if (num != 1 && num != 2)
+        return;
+    
+    if (num == 1 && cur_table == 2) {
+        hp2 = hp;
+        rt2 = rt;
+        fd2 = fd;
+
+        hp = hp1;
+        rt = rt1;
+        fd = fd1;
+    }
+    else if (num == 2 && cur_table == 1) {
+        hp1 = hp;
+        rt1 = rt;
+        fd1 = fd;
+
+        hp = hp2;
+        rt = rt2;
+        fd = fd2;
+    }
+    cur_table = num;
+}
+
 
 // Mater functions
 
@@ -1168,5 +1212,86 @@ int db_delete(int64_t key) {
     delete_entry(leaf, leaf_offset, key);
     
     return 0;
-}//fin
+}
 
+void db_join()
+{   
+    off_t leaf_1_offset, leaf_2_offset;
+    page * leaf_1, * leaf_2;
+
+    // set hp1 and hp2
+    if (cur_table == 1) {
+        hp1 = hp;
+        rt1 = rt;
+        fd1 = fd;
+    }
+    else {
+        hp2 = hp;
+        rt2 = rt;
+        fd2 = fd;
+    }
+
+    if (rt1 == NULL || rt2 == NULL) {
+        printf("Error: One or both root pages are not loaded.\n");
+        return;
+    }
+
+    // traversal to leftmost leaf in relation 1
+    leaf_1 = load_page_with_fd(fd1, hp1->rpo);
+    while (leaf_1 != NULL && leaf_1->is_leaf == 0) {
+        leaf_1_offset = leaf_1->next_offset;
+        free(leaf_1);
+
+        // load page with fd1
+        leaf_1 = load_page_with_fd(fd1, leaf_1_offset);
+        
+    }
+
+    // traversal to leftmost leaf in relation 2
+    leaf_2 = load_page_with_fd(fd2, hp2->rpo);
+    while (leaf_2 != NULL && leaf_2->is_leaf == 0) {
+        leaf_2_offset = leaf_2->next_offset;
+        free(leaf_2);
+
+        // load page with fd2
+        leaf_2 = load_page_with_fd(fd2, leaf_2_offset);
+    }
+
+    int idx_1 = 0;
+    int idx_2 = 0;
+    while (leaf_1 != NULL && leaf_2 != NULL) {
+        while (idx_1 < leaf_1->num_of_keys && idx_2 < leaf_2->num_of_keys) {
+            if (leaf_1->records[idx_1].key == leaf_2->records[idx_2].key) {
+                printf("%ld,%s,%s\n", leaf_1->records[idx_1].key, leaf_1->records[idx_1].value, leaf_2->records[idx_2].value);
+                idx_1++;
+                idx_2++;
+            }
+            else if (leaf_1->records[idx_1].key < leaf_2->records[idx_2].key) {
+                idx_1++;
+            }
+            else {
+                idx_2++;
+            }
+        }
+
+        if (idx_1 == leaf_1->num_of_keys) {
+            idx_1 = 0;
+            leaf_1_offset = leaf_1->next_offset;
+            free(leaf_1);
+
+            leaf_1 = (leaf_1_offset == 0) ? NULL : load_page_with_fd(fd1, leaf_1_offset);
+        }
+        if (idx_2 == leaf_2->num_of_keys) {
+            idx_2 = 0;
+            leaf_2_offset = leaf_2->next_offset;
+            free(leaf_2);
+    
+            leaf_2 = (leaf_2_offset == 0) ? NULL : load_page_with_fd(fd2, leaf_2_offset);
+        }
+    }
+    if (leaf_1 != NULL)
+        free(leaf_1);
+    if (leaf_2 != NULL)
+        free(leaf_2);
+    
+}   

@@ -54,6 +54,7 @@ extern H_P * hp;
 int open_table(char * pathname);
 H_P * load_header(off_t off);
 page * load_page(off_t off);
+page * load_page_with_fd(int fd, off_t off);
 
 void reset(off_t off);
 off_t new_page();
@@ -95,11 +96,13 @@ void delete_entry(page * node, off_t node_offset, int64_t key);
 
 off_t find_leaf_if_value_exists(int64_t key);
 
+void set_table_pointer(int num);
+
 // Master Functions
 char * db_find(int64_t key);
 int db_insert(int64_t key, char * value);
 int db_delete(int64_t key);
-
+void db_join();
 
 #endif /* __BPT_H__*/
 
