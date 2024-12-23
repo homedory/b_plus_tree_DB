@@ -102,6 +102,15 @@ This project is a simple database implementation that uses a B+ Tree as the inde
 ![page_layout](https://github.com/user-attachments/assets/7d15b6a5-8b7d-42d6-82c5-3e721e6aa57c)
 
 
+## Wiki & TroubleShooting
+[B+Tree Implementation][Wiki3]
+
+[Wiki3]: https://soft-quince-6af.notion.site/Assignment3-Wiki-14365520635a8052b921c4a24bee5f18
+
+[Natural Join Implementation][Wiki4]
+
+[Wiki4]: https://soft-quince-6af.notion.site/Assignment4-Wiki-16065520635a806d92d2e9d7ee058b74
+
 
 
 
